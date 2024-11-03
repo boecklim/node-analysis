@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"net/url"
+	"node-analysis/zmq"
 	"os"
 
 	"github.com/btcsuite/btcd/rpcclient"
@@ -19,20 +21,51 @@ func main() {
 	os.Exit(0)
 }
 
+const (
+	host     = "localhost"
+	user     = "bitcoin"
+	password = "bitcoin"
+	rpcPort  = 18443
+	zmqPort  = 29000
+)
+
 func run() error {
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelDebug}))
 
+	// bitcoind, err := bitcoin.New(host, port, user, password, false)
+	// if err != nil {
+	// 	log.Fatalln("Failed to create bitcoind instance:", err)
+	// }
+
+	// inf, err := bitcoind.GetNetworkInfo()
+	// if err != nil {
+	// 	log.Fatalln(err)
+	// }
+
+	// logger.Info("inf", "balance", inf.ProtocolVersion)
+
+	zmqURLString := fmt.Sprintf("zmq://%s:%d", host, zmqPort)
+
+	zmqURL, err := url.Parse(zmqURLString)
+	if err != nil {
+		return fmt.Errorf("failed to parse zmq URL: %v", err)
+	}
+	zmqSubscriber := zmq.NewZMQ(host, zmqPort, logger)
+
+	zmqClient := zmq.NewZMQClient(zmqURL, logger)
+
+	zmqClient.Start(zmqSubscriber)
+
 	client, err := rpcclient.New(&rpcclient.ConnConfig{
-		Host:         "localhost:18443",
-		User:         "bitcoin",
-		Pass:         "bitcoin",
+		Host:         fmt.Sprintf("%s:%d", host, rpcPort),
+		User:         user,
+		Pass:         password,
 		HTTPPostMode: true,
 		DisableTLS:   true,
 	}, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create rpc client: %v", err)
 	}
-
 	info, err := client.GetMiningInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
@@ -55,11 +88,13 @@ func run() error {
 
 	logger.Info("wallet address", "address", address.EncodeAddress())
 
-	// _, err = client.GenerateToAddress(101, address, ptrTo(int64(3)))
+	// hashes, err := client.GenerateToAddress(101, address, ptrTo(int64(3)))
 	// if err != nil {
 	// 	return fmt.Errorf("failed to gnereate to address: %v", err)
 	// }
-
+	// for _, hash := range hashes {
+	// 	logger.Info("hash", "hex string", hash.String())
+	// }
 	// isMining, err := client.GetGenerate()
 	// if err != nil {
 	// 	return fmt.Errorf("failed to get generate: %v", err)
@@ -67,10 +102,10 @@ func run() error {
 
 	// logger.Info("generate", "is mining", isMining)
 
-	_, err = client.Generate(5)
-	if err != nil {
-		return fmt.Errorf("failed to generate 1: %v", err)
-	}
+	// _, err = client.Generate(5)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to generate 1: %v", err)
+	// }
 
 	results, err := client.ListReceivedByAddress()
 	if err != nil {
