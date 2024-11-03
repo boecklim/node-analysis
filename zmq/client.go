@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+const (
+	pubhashblock = "hashblock"
+	pubhashtx    = "hashtx"
+)
+
 type ZMQClient struct {
 	url    *url.URL
 	logger *slog.Logger
@@ -27,24 +32,18 @@ type ZMQI interface {
 func (z *ZMQClient) Start(zmqi ZMQI) error {
 	ch := make(chan []string)
 
-	const pubhashblock = "pubhashblock"
-	const pubhashtx = "pubhashtx"
-	const pubrawblock = "pubrawblock"
-	const pubrawtx = "pubrawtx"
-
 	go func() {
 		for c := range ch {
+
+			// z.logger.Debug("zmq", slog.String("hash", c[1]))
+
 			switch c[0] {
 			case pubhashblock:
-				z.logger.Debug(pubhashblock, slog.String("hash", c[1]))
+				z.logger.Debug("ZMQ", "topic", pubhashblock, "hash", c[1])
 			case pubhashtx:
-				z.logger.Debug(pubhashtx, slog.String("hash", c[1]))
-			case pubrawblock:
-				z.logger.Debug(pubrawblock, slog.String("hash", c[1]))
-			case pubrawtx:
-				z.logger.Debug(pubrawtx, slog.String("hash", c[1]))
+				z.logger.Debug("ZMQ", "topic", pubhashtx, "hash", c[1])
 			default:
-				z.logger.Info("Unhandled ZMQ message", slog.String("msg", strings.Join(c, ",")))
+				z.logger.Info("Unhandled ZMQ message", "msg", strings.Join(c, ","))
 			}
 		}
 	}()
@@ -54,14 +53,6 @@ func (z *ZMQClient) Start(zmqi ZMQI) error {
 	}
 
 	if err := zmqi.Subscribe(pubhashtx, ch); err != nil {
-		return err
-	}
-
-	if err := zmqi.Subscribe(pubrawblock, ch); err != nil {
-		return err
-	}
-
-	if err := zmqi.Subscribe(pubrawtx, ch); err != nil {
 		return err
 	}
 

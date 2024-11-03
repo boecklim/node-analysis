@@ -14,19 +14,19 @@ import (
 	"github.com/go-zeromq/zmq4"
 )
 
-var allowedTopics = []string{
-	"hashblock",
-	"hashblock2",
-	"hashtx",
-	"hashtx2",
-	"rawblock",
-	"rawblock2",
-	"rawtx",
-	"rawtx2",
-	"discardedfrommempool",
-	"removedfrommempoolblock",
-	"invalidtx",
-}
+// var allowedTopics = []string{
+// 	"hashblock",
+// 	"hashblock2",
+// 	"hashtx",
+// 	"hashtx2",
+// 	"rawblock",
+// 	"rawblock2",
+// 	"rawtx",
+// 	"rawtx2",
+// 	"discardedfrommempool",
+// 	"removedfrommempoolblock",
+// 	"invalidtx",
+// }
 
 type subscriptionRequest struct {
 	topic string
@@ -119,9 +119,9 @@ dialLoop:
 }
 
 func (zmq *ZMQ) Subscribe(topic string, ch chan []string) error {
-	if !contains(allowedTopics, topic) {
-		return fmt.Errorf("topic must be %+v, received %q", allowedTopics, topic)
-	}
+	// if !contains(allowedTopics, topic) {
+	// 	return fmt.Errorf("topic must be %+v, received %q", allowedTopics, topic)
+	// }
 
 	zmq.addSubscription <- subscriptionRequest{
 		topic: topic,
@@ -132,9 +132,9 @@ func (zmq *ZMQ) Subscribe(topic string, ch chan []string) error {
 }
 
 func (zmq *ZMQ) Unsubscribe(topic string, ch chan []string) error {
-	if !contains(allowedTopics, topic) {
-		return fmt.Errorf("topic must be %+v, received %q", allowedTopics, topic)
-	}
+	// if !contains(allowedTopics, topic) {
+	// 	return fmt.Errorf("topic must be %+v, received %q", allowedTopics, topic)
+	// }
 
 	zmq.removeSubscription <- subscriptionRequest{
 		topic: topic,

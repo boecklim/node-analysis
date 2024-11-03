@@ -64,7 +64,10 @@ func run() error {
 
 	zmqClient := zmq.NewZMQClient(zmqURL, logger)
 
-	zmqClient.Start(zmqSubscriber)
+	err = zmqClient.Start(zmqSubscriber)
+	if err != nil {
+		return err
+	}
 
 	client, err := rpcclient.New(&rpcclient.ConnConfig{
 		Host:         fmt.Sprintf("%s:%d", host, rpcPort),
@@ -83,6 +86,7 @@ func run() error {
 
 	logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 
+	// walletName := "test-1"
 	walletName := "test-2"
 
 	wallet, err := client.CreateWallet(walletName)
@@ -104,7 +108,7 @@ func run() error {
 
 	logger.Info("wallet address", "address", address.EncodeAddress())
 
-	hashes, err := client.GenerateToAddress(101, address, ptrTo(int64(3)))
+	hashes, err := client.GenerateToAddress(1, address, nil)
 	if err != nil {
 		return fmt.Errorf("failed to gnereate to address: %v", err)
 	}
@@ -112,26 +116,13 @@ func run() error {
 		logger.Info("hash", "hex string", hash.String())
 	}
 
-	// _, err = client.Generate(5)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to generate 1: %v", err)
-	// }
-
-	results, err := client.ListReceivedByAddress()
-	if err != nil {
-		return fmt.Errorf("failed to list received by address: %v", err)
-	}
-
-	for _, result := range results {
-		logger.Info("result", "account", result.Account, "address", result.Address, "amount", result.Amount)
-	}
-
 	unspent, err := client.ListUnspent()
 	if err != nil {
 		return fmt.Errorf("failed to list received by address: %v", err)
 	}
 	for _, u := range unspent {
-		logger.Info("unspent", "account", u.Account, "address", u.Address, "amount", u.Amount)
+
+		logger.Info("unspent", "TxID", u.TxID, "address", u.Address, "amount", u.Amount)
 	}
 
 	time.Sleep(5 * time.Second)
