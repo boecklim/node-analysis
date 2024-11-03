@@ -1,16 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"log/slog"
-	"net/url"
-	"node-analysis/zmq"
 	"os"
-	"time"
 
 	"github.com/btcsuite/btcd/btcjson"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/lmittmann/tint"
 )
@@ -34,40 +31,6 @@ const (
 
 func run() error {
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelDebug}))
-
-	// bitcoind, err := bitcoin.New(host, port, user, password, false)
-	// if err != nil {
-	// 	log.Fatalln("Failed to create bitcoind instance:", err)
-	// }
-
-	// inf, err := bitcoind.GetNetworkInfo()
-	// if err != nil {
-	// 	log.Fatalln(err)
-	// }
-
-	// logger.Info("inf", "balance", inf.ProtocolVersion)
-
-	zmqURLString := fmt.Sprintf("zmq://%s:%d", host, zmqPort)
-
-	zmqURL, err := url.Parse(zmqURLString)
-	if err != nil {
-		return fmt.Errorf("failed to parse zmq URL: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	zmqSubscriber, err := zmq.NewZMQWithContext(ctx, host, zmqPort, logger)
-	if err != nil {
-		return err
-	}
-
-	zmqClient := zmq.NewZMQClient(zmqURL, logger)
-
-	err = zmqClient.Start(zmqSubscriber)
-	if err != nil {
-		return err
-	}
 
 	client, err := rpcclient.New(&rpcclient.ConnConfig{
 		Host:         fmt.Sprintf("%s:%d", host, rpcPort),
@@ -101,20 +64,37 @@ func run() error {
 		logger.Info("wallet created", "name", wallet.Name)
 	}
 
-	address, err := client.GetNewAddress(walletName)
+	var address btcutil.Address
+	address, err = client.GetNewAddress(walletName)
 	if err != nil {
-		return fmt.Errorf("failed to get new address: %v", err)
+
+		rpcErr, ok := err.(*btcjson.RPCError)
+		if ok && rpcErr.Code == btcjson.ErrRPCWalletNotFound {
+			logger.Warn("wallet not found", "err", err)
+
+			_, err := client.LoadWallet(walletName)
+			if err != nil {
+				return fmt.Errorf("failed to load wallet: %v", err)
+			}
+
+			address, err = client.GetNewAddress(walletName)
+			if err != nil {
+				return fmt.Errorf("failed to get new address: %v", err)
+			}
+		} else {
+			return err
+		}
 	}
 
 	logger.Info("wallet address", "address", address.EncodeAddress())
 
-	hashes, err := client.GenerateToAddress(1, address, nil)
-	if err != nil {
-		return fmt.Errorf("failed to gnereate to address: %v", err)
-	}
-	for _, hash := range hashes {
-		logger.Info("hash", "hex string", hash.String())
-	}
+	// hashes, err := client.GenerateToAddress(1, address, nil)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to gnereate to address: %v", err)
+	// }
+	// for _, hash := range hashes {
+	// 	logger.Info("hash", "hex string", hash.String())
+	// }
 
 	unspent, err := client.ListUnspent()
 	if err != nil {
@@ -125,11 +105,11 @@ func run() error {
 		logger.Info("unspent", "TxID", u.TxID, "address", u.Address, "amount", u.Amount)
 	}
 
-	time.Sleep(5 * time.Second)
+	// client.SendRawTransaction()
 
 	return nil
 }
 
-func ptrTo[T any](v T) *T {
-	return &v
-}
+// func splitUtxo(utxo btcjson.ListUnspentResult, outputs int, satoshis uint64) ([]*wire.MsgTx, error) {
+
+// }

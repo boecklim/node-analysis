@@ -1,6 +1,7 @@
 package zmq
 
 import (
+	"context"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -29,14 +30,24 @@ type ZMQI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (z *ZMQClient) Start(zmqi ZMQI) error {
+func (z *ZMQClient) Start(ctx context.Context, zmqi ZMQI) error {
 	ch := make(chan []string)
 
-	go func() {
-		for c := range ch {
+	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {
+		return err
+	}
 
-			// z.logger.Debug("zmq", slog.String("hash", c[1]))
+	if err := zmqi.Subscribe(pubhashtx, ch); err != nil {
+		return err
+	}
 
+loop:
+	for {
+		select {
+		case <-ctx.Done():
+			break loop
+
+		case c := <-ch:
 			switch c[0] {
 			case pubhashblock:
 				z.logger.Debug("ZMQ", "topic", pubhashblock, "hash", c[1])
@@ -46,14 +57,6 @@ func (z *ZMQClient) Start(zmqi ZMQI) error {
 				z.logger.Info("Unhandled ZMQ message", "msg", strings.Join(c, ","))
 			}
 		}
-	}()
-
-	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {
-		return err
-	}
-
-	if err := zmqi.Subscribe(pubhashtx, ch); err != nil {
-		return err
 	}
 
 	return nil
