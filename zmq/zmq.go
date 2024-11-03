@@ -45,13 +45,13 @@ type ZMQ struct {
 	logger             *slog.Logger
 }
 
-func NewZMQ(host string, port int, logger *slog.Logger) *ZMQ {
+func NewZMQ(host string, port int, logger *slog.Logger) (*ZMQ, error) {
 	ctx := context.Background()
 
 	return NewZMQWithContext(ctx, host, port, logger)
 }
 
-func NewZMQWithContext(ctx context.Context, host string, port int, logger *slog.Logger) *ZMQ {
+func NewZMQWithContext(ctx context.Context, host string, port int, logger *slog.Logger) (*ZMQ, error) {
 
 	zmq := &ZMQ{
 		address:            fmt.Sprintf("tcp://%s:%d", host, port),
@@ -59,11 +59,63 @@ func NewZMQWithContext(ctx context.Context, host string, port int, logger *slog.
 		addSubscription:    make(chan subscriptionRequest, 10),
 		removeSubscription: make(chan subscriptionRequest, 10),
 		logger:             logger,
+		socket:             zmq4.NewSub(ctx, zmq4.WithID(zmq4.SocketIdentity("sub"))),
+	}
+
+	err := zmq.dial(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	go zmq.start(ctx)
 
-	return zmq
+	return zmq, nil
+}
+
+func (zmq *ZMQ) dial(ctx context.Context) error {
+	err := zmq.socket.Dial(zmq.address)
+	if err == nil {
+		return nil
+	}
+
+	ticker := time.NewTicker(5 * time.Second)
+	counter := 0
+dialLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+
+			if counter >= 5 {
+				return errors.New("failed to connect to ZMQ after 5 retries")
+			}
+
+			err := zmq.socket.Dial(zmq.address)
+			if err != nil {
+				zmq.err = err
+				zmq.logger.Error(fmt.Sprintf("Could not dial ZMQ at %s: %v", zmq.address, err))
+				zmq.logger.Info("Attempting to re-establish ZMQ connection in 10 seconds...")
+				counter++
+				continue
+			}
+
+			break dialLoop
+
+		}
+	}
+
+	zmq.logger.Info(fmt.Sprintf("ZMQ: Connecting to %s", zmq.address))
+
+	for topic := range zmq.subscriptions {
+		if err := zmq.socket.SetOption(zmq4.OptionSubscribe, topic); err != nil {
+			return err
+		}
+		zmq.logger.Info(fmt.Sprintf("ZMQ: Subscribed to %s", topic))
+	}
+
+	return nil
+
 }
 
 func (zmq *ZMQ) Subscribe(topic string, ch chan []string) error {
@@ -94,31 +146,6 @@ func (zmq *ZMQ) Unsubscribe(topic string, ch chan []string) error {
 
 func (zmq *ZMQ) start(ctx context.Context) {
 	for {
-		zmq.socket = zmq4.NewSub(ctx, zmq4.WithID(zmq4.SocketIdentity("sub")))
-		defer func() {
-			if zmq.connected {
-				zmq.socket.Close()
-				zmq.connected = false
-			}
-		}()
-
-		if err := zmq.socket.Dial(zmq.address); err != nil {
-			zmq.err = err
-			zmq.logger.Error(fmt.Sprintf("Could not dial ZMQ at %s: %v", zmq.address, err))
-			zmq.logger.Info("Attempting to re-establish ZMQ connection in 10 seconds...")
-			time.Sleep(10 * time.Second)
-			continue
-		}
-
-		zmq.logger.Info(fmt.Sprintf("ZMQ: Connecting to %s", zmq.address))
-
-		for topic := range zmq.subscriptions {
-			if err := zmq.socket.SetOption(zmq4.OptionSubscribe, topic); err != nil {
-				zmq.err = fmt.Errorf("%+v", err)
-				return
-			}
-			zmq.logger.Info(fmt.Sprintf("ZMQ: Subscribed to %s", topic))
-		}
 
 	OUT:
 		for {

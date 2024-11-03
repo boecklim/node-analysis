@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/url"
 	"node-analysis/zmq"
 	"os"
+	"time"
 
+	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/lmittmann/tint"
 )
@@ -50,7 +53,14 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to parse zmq URL: %v", err)
 	}
-	zmqSubscriber := zmq.NewZMQ(host, zmqPort, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	zmqSubscriber, err := zmq.NewZMQWithContext(ctx, host, zmqPort, logger)
+	if err != nil {
+		return err
+	}
 
 	zmqClient := zmq.NewZMQClient(zmqURL, logger)
 
@@ -71,36 +81,36 @@ func run() error {
 		return fmt.Errorf("failed to get info: %v", err)
 	}
 
-	fmt.Println(info.Blocks)
 	logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 
-	wallet, err := client.CreateWallet("test-1")
+	walletName := "test-2"
+
+	wallet, err := client.CreateWallet(walletName)
 	if err != nil {
-		logger.Error("failed to create wallet", "err", err)
+		rpcErr, ok := err.(*btcjson.RPCError)
+		if ok && rpcErr.Code == btcjson.ErrRPCWallet {
+			logger.Warn("failed to create wallet - already exists", "err", err)
+		} else {
+			return err
+		}
 	} else {
 		logger.Info("wallet created", "name", wallet.Name)
 	}
 
-	address, err := client.GetNewAddress("test-1")
+	address, err := client.GetNewAddress(walletName)
 	if err != nil {
 		return fmt.Errorf("failed to get new address: %v", err)
 	}
 
 	logger.Info("wallet address", "address", address.EncodeAddress())
 
-	// hashes, err := client.GenerateToAddress(101, address, ptrTo(int64(3)))
-	// if err != nil {
-	// 	return fmt.Errorf("failed to gnereate to address: %v", err)
-	// }
-	// for _, hash := range hashes {
-	// 	logger.Info("hash", "hex string", hash.String())
-	// }
-	// isMining, err := client.GetGenerate()
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get generate: %v", err)
-	// }
-
-	// logger.Info("generate", "is mining", isMining)
+	hashes, err := client.GenerateToAddress(101, address, ptrTo(int64(3)))
+	if err != nil {
+		return fmt.Errorf("failed to gnereate to address: %v", err)
+	}
+	for _, hash := range hashes {
+		logger.Info("hash", "hex string", hash.String())
+	}
 
 	// _, err = client.Generate(5)
 	// if err != nil {
@@ -123,6 +133,8 @@ func run() error {
 	for _, u := range unspent {
 		logger.Info("unspent", "account", u.Account, "address", u.Address, "amount", u.Amount)
 	}
+
+	time.Sleep(5 * time.Second)
 
 	return nil
 }

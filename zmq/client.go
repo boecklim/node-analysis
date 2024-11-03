@@ -27,10 +27,6 @@ type ZMQI interface {
 func (z *ZMQClient) Start(zmqi ZMQI) error {
 	ch := make(chan []string)
 
-	const hashtxTopic = "hashtx2"
-	const invalidTxTopic = "invalidtx"
-	const discardedFromMempoolTopic = "discardedfrommempool"
-
 	const pubhashblock = "pubhashblock"
 	const pubhashtx = "pubhashtx"
 	const pubrawblock = "pubrawblock"
@@ -53,15 +49,19 @@ func (z *ZMQClient) Start(zmqi ZMQI) error {
 		}
 	}()
 
-	if err := zmqi.Subscribe(hashtxTopic, ch); err != nil {
+	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {
 		return err
 	}
 
-	if err := zmqi.Subscribe(invalidTxTopic, ch); err != nil {
+	if err := zmqi.Subscribe(pubhashtx, ch); err != nil {
 		return err
 	}
 
-	if err := zmqi.Subscribe(discardedFromMempoolTopic, ch); err != nil {
+	if err := zmqi.Subscribe(pubrawblock, ch); err != nil {
+		return err
+	}
+
+	if err := zmqi.Subscribe(pubrawtx, ch); err != nil {
 		return err
 	}
 
