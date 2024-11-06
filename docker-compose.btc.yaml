@@ -1,11 +1,11 @@
 services:
   node1:
     container_name: node1
-    image: ruimarinho/bitcoin-core:latest
+    # image: ruimarinho/bitcoin-core:latest
+    image: bitcoindevelopernetwork/bitcoind-regtest
     ports:
-      - "18332:18332"
       - "18443:18443"
-      - "18444:18444"
+      - "29000:29000"
     expose:
       - "18332"
       - "18333"
@@ -13,20 +13,18 @@ services:
       - "18444"
     healthcheck:
       test: ["CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo"]
-    # environment:
     #   - UID=$UID
     #   - GID=$GID
     volumes:
-      - ./config/btc/bitcoin.conf:/home/bitcoin/.bitcoin/bitcoin.conf
-      # - node1-data:/data
-      - ./btc/:/home/bitcoin/.bitcoin
+      - ./config/btc/bitcoin.conf:/bitcoin/.bitcoin/bitcoin.conf
+      - node1-data:/bitcoin
     # command: [ "/entrypoint.sh", "bitcoind", "-connect=node2:18333", "-connect=node3:18333" ]
     command: [
         # "/entrypoint.sh",
         "-printtoconsole",
         # "-rpcallowip=172.17.0.0/16",
-        "-rpcbind=0.0.0.0",
-        "-regtest=1",
+        # "-rpcbind=0.0.0.0",
+        # "-regtest=1",
         # "-rpcauth='foo:7d9ba5ae63c3d4dc30583ff4fe65a67e$9e3634e81c11659e3de036d0bf88f89cd169c1039e6e09607562d54765c649cc'",
       ] #       -printtoconsole      -regtest=1
 

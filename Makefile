@@ -11,8 +11,8 @@ stop-bsv:
 
 .PHONY: run-btc
 run-btc:
-	docker compose -f docker-compose.btc.yaml down --remove-orphans
-	docker compose -f docker-compose.btc.yaml up
+	docker-compose -f docker-compose.btc.yaml down --remove-orphans
+	docker-compose -f docker-compose.btc.yaml up
 
 .PHONY: stop-btc
 stop-btc:
