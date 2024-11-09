@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"node-analysis/utils"
+	"node-analysis/processor"
 	"os"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -55,9 +55,8 @@ func run() error {
 		return err
 	}
 
-	fmt.Println(networkInfo.Version)
-
 	logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+	logger.Info("network info", "version", networkInfo.Version)
 
 	privKeyBytes, err := hex.DecodeString("13d2c242e1286ce48b86d51742e4a9a44398e36a0400fdb87425a014538a7413")
 	if err != nil {
@@ -69,42 +68,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
 	logger.Info("address", "address", address.EncodeAddress())
 
-	blockHashes, err := client.GenerateToAddress(101, address, nil)
-	if err != nil {
-		return fmt.Errorf("failed to gnereate to address: %v", err)
-	}
-	for _, hash := range blockHashes {
-		logger.Info("block hash", "hex string", hash.String())
-	}
+	p := processor.New(client, logger, address, privKey)
 
-	lastBlock, err := client.GetBlock(blockHashes[0])
+	err = p.PrepareUtxos()
 	if err != nil {
 		return err
 	}
-
-	txHash := lastBlock.Transactions[0].TxHash()
-
-	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
-	txOut, err := client.GetTxOut(&txHash, 0, false)
-	if err != nil {
-		return err
-	}
-
-	valueSat := int64(txOut.Value * 1e8)
-	tx, err := utils.SplitToAddress(address, &txHash, valueSat, txOut.ScriptPubKey.Hex, 50, privKey)
-	if err != nil {
-		return err
-	}
-
-	sentTxHash, err := client.SendRawTransaction(tx, false)
-	if err != nil {
-		return err
-	}
-
-	logger.Info("sent raw tx", "hash", sentTxHash.String())
 
 	return nil
 }

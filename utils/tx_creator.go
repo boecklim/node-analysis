@@ -12,10 +12,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func SplitToAddress(address btcutil.Address, prevOutputHash *chainhash.Hash, inputSat int64, scriptPubKeyHex string, outputs int, privKey *btcec.PrivateKey) (*wire.MsgTx, error) {
+func SplitToAddress(address btcutil.Address, txOut TxOut, outputs int, privKey *btcec.PrivateKey) (*wire.MsgTx, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
-	prevOut := wire.NewOutPoint(prevOutputHash, 0)
+	prevOut := wire.NewOutPoint(txOut.Hash, 0)
 	input := wire.NewTxIn(prevOut, nil, nil)
 	tx.AddTxIn(input)
 
@@ -24,9 +24,9 @@ func SplitToAddress(address btcutil.Address, prevOutputHash *chainhash.Hash, inp
 		return nil, err
 	}
 
-	remainingSat := inputSat
+	remainingSat := txOut.ValueSat
 
-	satPerOutput := int64(math.Floor(float64(inputSat) / float64(outputs+1)))
+	satPerOutput := int64(math.Floor(float64(txOut.ValueSat) / float64(outputs+1)))
 
 	for range outputs {
 		tx.AddTxOut(wire.NewTxOut(satPerOutput, []byte(pkScript)))
@@ -39,7 +39,7 @@ func SplitToAddress(address btcutil.Address, prevOutputHash *chainhash.Hash, inp
 		return privKey, true, nil
 	}
 
-	pkScriptOrig, err := hex.DecodeString(scriptPubKeyHex)
+	pkScriptOrig, err := hex.DecodeString(txOut.ScriptPubKeyHex)
 	if err != nil {
 		return nil, err
 	}
@@ -54,4 +54,10 @@ func SplitToAddress(address btcutil.Address, prevOutputHash *chainhash.Hash, inp
 
 	return tx, nil
 
+}
+
+type TxOut struct {
+	Hash            *chainhash.Hash
+	ScriptPubKeyHex string
+	ValueSat        int64
 }
