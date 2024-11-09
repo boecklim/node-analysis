@@ -115,29 +115,6 @@ func (p *Processor) PrepareUtxos() error {
 			return err
 		}
 
-		// for errors.Is(err, ErrOutputSpent) {
-		// 	p.logger.Warn("block coinbase spent", "blockhash", blockHash.String())
-
-		// 	_, err = p.client.GenerateToAddress(1, p.address, nil)
-		// 	if err != nil {
-		// 		return fmt.Errorf("failed to gnereate to address: %v", err)
-		// 	}
-
-		// 	info, err = p.client.GetMiningInfo()
-		// 	if err != nil {
-		// 		return fmt.Errorf("failed to get info: %v", err)
-		// 	}
-
-		// 	blockHash, err := p.client.GetBlockHash(info.Blocks - coinbaseSpendableAfterConf)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// 	txOut, err = p.GetCoinbaseTxOutFromBlock(blockHash)
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// }
-
 		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
 
 		tx, err := utils.SplitToAddress(p.address, txOut, outputsPerTx, p.privKey)
