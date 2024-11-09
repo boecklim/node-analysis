@@ -1,6 +1,7 @@
 package processor
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,28 +18,36 @@ type Processor struct {
 	address btcutil.Address
 	logger  *slog.Logger
 	privKey *btcec.PrivateKey
+	// utxoMap     sync.Map
+	utxoChannel chan utils.TxOut
 }
 
 var (
-	ErrOutputAlreadySpent = errors.New("output already spent")
+	ErrOutputSpent = errors.New("output already spent")
 )
 
-const targetUtxos = 10000
-const outputsPerTx = 100
+const (
+	targetUtxos                = 350
+	outputsPerTx               = 100
+	coinBaseVout               = 0
+	satPerBtc                  = 1e8
+	coinbaseSpendableAfterConf = 100
+)
 
 func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) *Processor {
 
 	p := &Processor{
-		client:  client,
-		logger:  logger,
-		address: address,
-		privKey: privKey,
+		client:      client,
+		logger:      logger,
+		address:     address,
+		privKey:     privKey,
+		utxoChannel: make(chan utils.TxOut, 10100),
 	}
 
 	return p
 }
 
-func (p *Processor) GetTxOutHashFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
+func (p *Processor) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
 		return utils.TxOut{}, err
@@ -47,19 +56,20 @@ func (p *Processor) GetTxOutHashFromBlock(blockHash *chainhash.Hash) (utils.TxOu
 	txHash := lastBlock.Transactions[0].TxHash()
 
 	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
-	txOut, err := p.client.GetTxOut(&txHash, 0, false)
+	txOut, err := p.client.GetTxOut(&txHash, coinBaseVout, false)
 	if err != nil {
 		return utils.TxOut{}, err
 	}
 
 	if txOut == nil {
-		return utils.TxOut{}, ErrOutputAlreadySpent
+		return utils.TxOut{}, ErrOutputSpent
 	}
 
 	return utils.TxOut{
 		Hash:            &txHash,
-		ValueSat:        int64(txOut.Value * 1e8),
+		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
+		VOut:            0,
 	}, nil
 }
 
@@ -70,9 +80,9 @@ func (p *Processor) PrepareUtxos() error {
 		return fmt.Errorf("failed to get info: %v", err)
 	}
 
-	if info.Blocks <= 100 {
+	if info.Blocks <= coinbaseSpendableAfterConf {
 
-		blocksToGenerate := 101 - info.Blocks
+		blocksToGenerate := coinbaseSpendableAfterConf + 1 - info.Blocks
 
 		_, err := p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
 		if err != nil {
@@ -80,23 +90,9 @@ func (p *Processor) PrepareUtxos() error {
 		}
 	}
 
-	blockHash, err := p.client.GetBlockHash(info.Blocks - 100)
-	if err != nil {
-		return err
-	}
+	for len(p.utxoChannel) < targetUtxos {
 
-	txOut, err := p.GetTxOutHashFromBlock(blockHash)
-	if err != nil {
-		return err
-	}
-
-	counter := 0
-	for err == ErrOutputAlreadySpent {
-
-		if counter > 20 {
-			return errors.New("too many outputs already spent")
-		}
-		_, err = p.client.GenerateToAddress(1, p.address, nil)
+		_, err := p.client.GenerateToAddress(1, p.address, nil)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -106,29 +102,68 @@ func (p *Processor) PrepareUtxos() error {
 			return fmt.Errorf("failed to get info: %v", err)
 		}
 
-		blockHash, err := p.client.GetBlockHash(info.Blocks - 100)
+		blockHash, err := p.client.GetBlockHash(info.Blocks - coinbaseSpendableAfterConf)
 		if err != nil {
 			return err
 		}
-		txOut, err = p.GetTxOutHashFromBlock(blockHash)
+
+		txOut, err := p.GetCoinbaseTxOutFromBlock(blockHash)
+		if err != nil {
+			if errors.Is(err, ErrOutputSpent) {
+				continue
+			}
+			return err
+		}
+
+		// for errors.Is(err, ErrOutputSpent) {
+		// 	p.logger.Warn("block coinbase spent", "blockhash", blockHash.String())
+
+		// 	_, err = p.client.GenerateToAddress(1, p.address, nil)
+		// 	if err != nil {
+		// 		return fmt.Errorf("failed to gnereate to address: %v", err)
+		// 	}
+
+		// 	info, err = p.client.GetMiningInfo()
+		// 	if err != nil {
+		// 		return fmt.Errorf("failed to get info: %v", err)
+		// 	}
+
+		// 	blockHash, err := p.client.GetBlockHash(info.Blocks - coinbaseSpendableAfterConf)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	txOut, err = p.GetCoinbaseTxOutFromBlock(blockHash)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
+
+		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
+
+		tx, err := utils.SplitToAddress(p.address, txOut, outputsPerTx, p.privKey)
 		if err != nil {
 			return err
 		}
+
+		sentTxHash, err := p.client.SendRawTransaction(tx, false)
+		if err != nil {
+			return err
+		}
+
+		p.logger.Info("sent raw tx", "hash", sentTxHash.String())
+
+		for i, output := range tx.TxOut {
+
+			txOut := utils.TxOut{
+				Hash:            sentTxHash,
+				ScriptPubKeyHex: hex.EncodeToString(output.PkScript),
+				ValueSat:        output.Value,
+				VOut:            uint32(i),
+			}
+
+			p.utxoChannel <- txOut
+		}
 	}
-
-	p.logger.Info("tx", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
-
-	tx, err := utils.SplitToAddress(p.address, txOut, outputsPerTx, p.privKey)
-	if err != nil {
-		return err
-	}
-
-	sentTxHash, err := p.client.SendRawTransaction(tx, false)
-	if err != nil {
-		return err
-	}
-
-	p.logger.Info("sent raw tx", "hash", sentTxHash.String())
 
 	return nil
 

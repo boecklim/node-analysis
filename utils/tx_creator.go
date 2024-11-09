@@ -60,4 +60,5 @@ type TxOut struct {
 	Hash            *chainhash.Hash
 	ScriptPubKeyHex string
 	ValueSat        int64
+	VOut            uint32
 }
