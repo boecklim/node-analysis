@@ -2,9 +2,9 @@ package utils
 
 import (
 	"encoding/hex"
+	"math"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -12,10 +12,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func PayToAddress(address btcutil.Address, hash *chainhash.Hash, txOut *btcjson.GetTxOutResult, privKey *btcec.PrivateKey) (*wire.MsgTx, error) {
+func SplitToAddress(address btcutil.Address, prevOutputHash *chainhash.Hash, inputSat int64, scriptPubKeyHex string, outputs int, privKey *btcec.PrivateKey) (*wire.MsgTx, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
-	prevOut := wire.NewOutPoint(hash, 0)
+	prevOut := wire.NewOutPoint(prevOutputHash, 0)
 	input := wire.NewTxIn(prevOut, nil, nil)
 	tx.AddTxIn(input)
 
@@ -24,15 +24,22 @@ func PayToAddress(address btcutil.Address, hash *chainhash.Hash, txOut *btcjson.
 		return nil, err
 	}
 
-	valueSat := int64(txOut.Value * 1e8)
-	tx.AddTxOut(wire.NewTxOut(1000, []byte(pkScript)))
-	tx.AddTxOut(wire.NewTxOut(valueSat-1500, []byte(pkScript)))
+	remainingSat := inputSat
+
+	satPerOutput := int64(math.Floor(float64(inputSat) / float64(outputs+1)))
+
+	for range outputs {
+		tx.AddTxOut(wire.NewTxOut(satPerOutput, []byte(pkScript)))
+		remainingSat -= satPerOutput
+	}
+
+	tx.AddTxOut(wire.NewTxOut(remainingSat-3000, []byte(pkScript)))
 
 	lookupKey := func(a btcutil.Address) (*btcec.PrivateKey, bool, error) {
 		return privKey, true, nil
 	}
 
-	pkScriptOrig, err := hex.DecodeString(txOut.ScriptPubKey.Hex)
+	pkScriptOrig, err := hex.DecodeString(scriptPubKeyHex)
 	if err != nil {
 		return nil, err
 	}

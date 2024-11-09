@@ -93,7 +93,8 @@ func run() error {
 		return err
 	}
 
-	tx, err := utils.PayToAddress(address, &txHash, txOut, privKey)
+	valueSat := int64(txOut.Value * 1e8)
+	tx, err := utils.SplitToAddress(address, &txHash, valueSat, txOut.ScriptPubKey.Hex, 50, privKey)
 	if err != nil {
 		return err
 	}
