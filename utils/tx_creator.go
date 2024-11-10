@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func SplitToAddress(address btcutil.Address, txOut TxOut, outputs int, privKey *btcec.PrivateKey) (*wire.MsgTx, error) {
+func SplitToAddress(address btcutil.Address, txOut TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	prevOut := wire.NewOutPoint(txOut.Hash, 0)
@@ -33,7 +33,7 @@ func SplitToAddress(address btcutil.Address, txOut TxOut, outputs int, privKey *
 		remainingSat -= satPerOutput
 	}
 
-	tx.AddTxOut(wire.NewTxOut(remainingSat-3000, []byte(pkScript)))
+	tx.AddTxOut(wire.NewTxOut(remainingSat-fee, []byte(pkScript)))
 
 	lookupKey := func(a btcutil.Address) (*btcec.PrivateKey, bool, error) {
 		return privKey, true, nil

@@ -1,25 +1,39 @@
 package processor
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"node-analysis/utils"
+	"sync"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/wire"
 )
 
 type Processor struct {
-	client  *rpcclient.Client
-	address btcutil.Address
-	logger  *slog.Logger
-	privKey *btcec.PrivateKey
-	// utxoMap     sync.Map
-	utxoChannel chan utils.TxOut
+	client           *rpcclient.Client
+	address          btcutil.Address
+	addressScriptHex string
+	pkScript         []byte
+	logger           *slog.Logger
+	privKey          *btcec.PrivateKey
+	utxoChannel      chan utils.TxOut
+
+	cancelAll  context.CancelFunc
+	ctx        context.Context
+	shutdown   chan struct{}
+	wg         sync.WaitGroup
+	totalTxs   int64
+	limit      int64
+	satoshiMap sync.Map
+	txChannel  chan *wire.MsgTx
 }
 
 var (
@@ -27,24 +41,38 @@ var (
 )
 
 const (
-	targetUtxos                = 350
-	outputsPerTx               = 100
+	targetUtxos                = 150
+	outputsPerTx               = 20 // must be lower than 25 other wise err="-26: too-long-mempool-chain, too many descendants for tx ..."
 	coinBaseVout               = 0
 	satPerBtc                  = 1e8
 	coinbaseSpendableAfterConf = 100
+	millisecondsPerSecond      = 1000
+	fee                        = 3000
 )
 
-func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) *Processor {
+func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) (*Processor, error) {
 
+	pkScript, err := txscript.PayToAddrScript(address)
+	if err != nil {
+		return nil, err
+	}
 	p := &Processor{
-		client:      client,
-		logger:      logger,
-		address:     address,
-		privKey:     privKey,
-		utxoChannel: make(chan utils.TxOut, 10100),
+		client:           client,
+		logger:           logger,
+		address:          address,
+		addressScriptHex: hex.EncodeToString(address.ScriptAddress()),
+		pkScript:         pkScript,
+		privKey:          privKey,
+		utxoChannel:      make(chan utils.TxOut, 10100),
+		shutdown:         make(chan struct{}, 1),
+		txChannel:        make(chan *wire.MsgTx, 10100),
 	}
 
-	return p
+	ctx, cancelAll := context.WithCancel(context.Background())
+	p.cancelAll = cancelAll
+	p.ctx = ctx
+
+	return p, nil
 }
 
 func (p *Processor) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
@@ -83,6 +111,7 @@ func (p *Processor) PrepareUtxos() error {
 	if info.Blocks <= coinbaseSpendableAfterConf {
 
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - info.Blocks
+		p.logger.Info("generating blocks", "number", blocksToGenerate)
 
 		_, err := p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
 		if err != nil {
@@ -117,7 +146,7 @@ func (p *Processor) PrepareUtxos() error {
 
 		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
 
-		tx, err := utils.SplitToAddress(p.address, txOut, outputsPerTx, p.privKey)
+		tx, err := utils.SplitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
 		if err != nil {
 			return err
 		}
@@ -127,7 +156,7 @@ func (p *Processor) PrepareUtxos() error {
 			return err
 		}
 
-		p.logger.Info("sent raw tx", "hash", sentTxHash.String())
+		p.logger.Info("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
 
 		for i, output := range tx.TxOut {
 
