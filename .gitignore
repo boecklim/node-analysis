@@ -1,2 +1,8 @@
 /btc
 bitcoin.conf
+/build
+/*/.terraform
+.env
+*.lock.hcl
+*.lock.info
+*.tfstate*
