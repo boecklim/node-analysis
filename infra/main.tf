@@ -136,3 +136,8 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
     version   = "latest"
   }
 }
+
+resource "local_file" "cloud_pem" { 
+  filename = "${path.module}/private_keys/cloudtls.pem"
+  content = tls_private_key.example_ssh.private_key_pem
+}

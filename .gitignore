@@ -6,3 +6,4 @@ bitcoin.conf
 *.lock.hcl
 *.lock.info
 *.tfstate*
+infra/private_keys/
