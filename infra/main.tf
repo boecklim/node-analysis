@@ -7,106 +7,126 @@ resource "azurerm_resource_group" "rg" {
   location = var.resource_group_location
 }
 
-resource "random_pet" "azurerm_virtual_network_name" {
-  prefix = "vnet"
-}
-
-resource "azurerm_virtual_network" "test" {
-  name                = random_pet.azurerm_virtual_network_name.id
+# Create virtual network
+resource "azurerm_virtual_network" "my_terraform_network" {
+  name                = "myVnet"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-resource "random_pet" "azurerm_subnet_name" {
-  prefix = "sub"
-}
-
-resource "azurerm_subnet" "test" {
-  name                 = random_pet.azurerm_subnet_name.id
+# Create subnet
+resource "azurerm_subnet" "my_terraform_subnet" {
+  name                 = "mySubnet"
   resource_group_name  = azurerm_resource_group.rg.name
-  virtual_network_name = azurerm_virtual_network.test.name
-  address_prefixes     = ["10.0.2.0/24"]
+  virtual_network_name = azurerm_virtual_network.my_terraform_network.name
+  address_prefixes     = ["10.0.1.0/24"]
 }
 
-
-resource "azurerm_network_interface" "test" {
-  count               = 2
-  name                = "acctni${count.index}"
+# Create network interface
+resource "azurerm_network_interface" "my_terraform_nic" {
+  name                = "myNIC"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
   ip_configuration {
-    name                          = "testConfiguration"
-    subnet_id                     = azurerm_subnet.test.id
+    name                          = "my_nic_configuration"
+    subnet_id                     = azurerm_subnet.my_terraform_subnet.id
     private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.my_terraform_public_ip.id
   }
 }
 
-resource "azurerm_availability_set" "avset" {
-  name                         = "avset"
-  location                     = azurerm_resource_group.rg.location
-  resource_group_name          = azurerm_resource_group.rg.name
-  platform_fault_domain_count  = 2
-  platform_update_domain_count = 2
-  managed                      = true
+# Create public IPs
+resource "azurerm_public_ip" "my_terraform_public_ip" {
+  name                = "myPublicIP"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  allocation_method   = "Dynamic"
 }
 
-resource "random_pet" "azurerm_linux_virtual_machine_name" {
-  prefix = "vm"
-}
+# Create Network Security Group and rule
+resource "azurerm_network_security_group" "my_terraform_nsg" {
+  name                = "myNetworkSecurityGroup"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
 
-resource "azurerm_linux_virtual_machine" "test" {
-  count                 = 2
-  name                  = "${random_pet.azurerm_linux_virtual_machine_name.id}${count.index}"
-  location              = azurerm_resource_group.rg.location
-  availability_set_id   = azurerm_availability_set.avset.id
-  resource_group_name   = azurerm_resource_group.rg.name
-  network_interface_ids = [azurerm_network_interface.test[count.index].id]
-  size                  = "Standard_B1s"
-
-  # Uncomment this line to delete the OS disk automatically when deleting the VM
-  # delete_os_disk_on_termination = true
-
-  # Uncomment this line to delete the data disks automatically when deleting the VM
-  # delete_data_disks_on_termination = true
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
-    version   = "latest"
+  security_rule {
+    name                       = "SSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
   }
-
-  admin_ssh_key {
-    username   = var.username
-    public_key = azapi_resource_action.ssh_public_key_gen.output.publicKey
-  }
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
-    name                 = "myosdisk${count.index}"
-  }
-
-  computer_name  = "hostname"
-  admin_username = var.username
 }
 
-resource "azurerm_managed_disk" "test" {
-  count                = 2
-  name                 = "datadisk_existing_${count.index}"
-  location             = azurerm_resource_group.rg.location
-  resource_group_name  = azurerm_resource_group.rg.name
-  storage_account_type = "Premium_LRS"
-  create_option        = "Empty"
-  disk_size_gb         = "64"
+# Connect the security group to the network interface
+resource "azurerm_network_interface_security_group_association" "example" {
+  network_interface_id      = azurerm_network_interface.my_terraform_nic.id
+  network_security_group_id = azurerm_network_security_group.my_terraform_nsg.id
 }
 
-resource "azurerm_virtual_machine_data_disk_attachment" "test" {
-  count              = 2
-  managed_disk_id    = azurerm_managed_disk.test[count.index].id
-  virtual_machine_id = azurerm_linux_virtual_machine.test[count.index].id
-  lun                = "10"
-  caching            = "ReadWrite"
-}
+# Generate random text for a unique storage account name
+# resource "random_id" "random_id" {
+#   keepers = {
+#     # Generate a new ID only when a new resource group is defined
+#     resource_group = azurerm_resource_group.rg.name
+#   }
+
+#   byte_length = 8
+# }
+
+# # Create storage account for boot diagnostics
+# resource "azurerm_storage_account" "my_storage_account" {
+#   name                     = "diag${random_id.random_id.hex}"
+#   location                 = azurerm_resource_group.rg.location
+#   resource_group_name      = azurerm_resource_group.rg.name
+#   account_tier             = "Standard"
+#   account_replication_type = "LRS"
+# }
+
+# # Create (and display) an SSH key
+# resource "tls_private_key" "example_ssh" {
+#   algorithm = "RSA"
+#   rsa_bits  = 4096
+# }
+
+# # Create virtual machine
+# resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
+#   name                  = "myVM"
+#   location              = azurerm_resource_group.rg.location
+#   resource_group_name   = azurerm_resource_group.rg.name
+#   network_interface_ids = [azurerm_network_interface.my_terraform_nic.id]
+#   size                  = "Standard_DS1_v2"
+
+
+
+#   source_image_reference {
+#     publisher = "Canonical"
+#     offer     = "0001-com-ubuntu-server-jammy"
+#     sku       = "22_04-lts-gen2"
+#     version   = "latest"
+#   }
+
+#   computer_name                   = "myvm"
+#   admin_username                  = "azureuser"
+#   disable_password_authentication = true
+
+#   admin_ssh_key {
+#     username   = "azureuser"
+#     public_key = tls_private_key.example_ssh.public_key_openssh
+#   }
+#   os_disk {
+#     caching              = "ReadWrite"
+#     storage_account_type = "Premium_LRS"
+#     name                 = "myOsDisk"
+#   }
+
+#   boot_diagnostics {
+#     storage_account_uri = azurerm_storage_account.my_storage_account.primary_blob_endpoint
+#   }
+# }
