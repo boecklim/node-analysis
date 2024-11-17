@@ -166,12 +166,19 @@ write_files:
     content: |
         regtest=1
         debug=1
+        listen=1
         rpcuser=bitcoin
         rpcpassword=bitcoin
         zmqpubhashtx=tcp://127.0.0.1:29000
         zmqpubhashblock=tcp://127.0.0.1:29000
         datadir=/home/azureuser/bitcoin-28.0/data
         minrelaytxfee=0
+        [regtest]
+        connect=10.0.1.5
+        connect=10.0.1.6
+        connect=10.0.1.7
+        connect=10.0.1.8
+        connect=10.0.1.9
   - owner: azureuser:azureuser
     path: /etc/systemd/system/bitcoin.service
     permissions: '0644'
