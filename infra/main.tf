@@ -145,6 +145,34 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
     sku       = "22_04-lts-gen2"
     version   = "latest"
   }
+  
+  custom_data = data.template_cloudinit_config.config.rendered
+}
+
+data "template_cloudinit_config" "config" {
+  gzip          = true
+  base64_encode = true
+
+  # Main cloud-config configuration file.
+  part {
+    content_type = "text/cloud-config"
+    content      = <<EOF
+#cloud-config
+write_files:
+  - owner: azureuser:azureuser
+    path: /home/azureuser/.bitcoin/bitcoin.conf
+    defer: true
+    content: |
+        regtest=1
+        debug=1
+        rpcuser=bitcoin
+        rpcpassword=bitcoin
+        zmqpubhashtx=tcp://127.0.0.1:29000
+        zmqpubhashblock=tcp://127.0.0.1:29000
+        datadir=/home/azureuser/bitcoin-28.0/data
+        minrelaytxfee=0
+EOF
+  }
 }
 
 
