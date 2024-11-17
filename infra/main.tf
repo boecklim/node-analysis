@@ -160,7 +160,7 @@ data "template_cloudinit_config" "config" {
 #cloud-config
 write_files:
   - owner: azureuser:azureuser
-    path: /home/azureuser/.bitcoin/bitcoin.conf
+    path: /root/.bitcoin/bitcoin.conf
     defer: true
     content: |
         regtest=1
@@ -171,6 +171,31 @@ write_files:
         zmqpubhashblock=tcp://127.0.0.1:29000
         datadir=/home/azureuser/bitcoin-28.0/data
         minrelaytxfee=0
+  - owner: azureuser:azureuser
+    path: /etc/systemd/system/bitcoin.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Bitcoin Service
+      After=network.target
+
+      [Service]
+      ExecStart=/home/azureuser/bitcoin-28.0/bin/bitcoind
+      Restart=always
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - echo "Running custom startup commands"
+  - apt-get update
+  - apt-get install -y wget
+  - wget -P /home/azureuser https://bitcoincore.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
+  - cd /home/azureuser
+  - tar xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
+  - mkdir /home/azureuser/bitcoin-28.0/data
+  - systemctl enable bitcoin
+  - systemctl start bitcoin
 EOF
   }
 }
