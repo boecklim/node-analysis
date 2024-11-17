@@ -63,7 +63,8 @@ resource "azurerm_network_interface" "my_terraform_nic" {
   ip_configuration {
     name                          = "my_nic_configuration"
     subnet_id                     = azurerm_subnet.my_terraform_subnet.id
-    private_ip_address_allocation = "Dynamic"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.0.1.${count.index + 5}"
   }
 }
 
@@ -124,7 +125,7 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
   resource_group_name             = azurerm_resource_group.rg.name
   network_interface_ids           = [azurerm_network_interface.my_terraform_nic[count.index].id]
   size                            = "Standard_B1s"
-  computer_name                   = "my_vm_${count.index}"
+  computer_name                   = "myvm${count.index}"
   admin_username                  = "azureuser"
   disable_password_authentication = true
 
