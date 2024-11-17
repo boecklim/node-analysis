@@ -124,7 +124,7 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
   resource_group_name             = azurerm_resource_group.rg.name
   network_interface_ids           = [azurerm_network_interface.my_terraform_nic[count.index].id]
   size                            = "Standard_B1s"
-  computer_name                   = "myvm"
+  computer_name                   = "my_vm_${count.index}"
   admin_username                  = "azureuser"
   disable_password_authentication = true
 
