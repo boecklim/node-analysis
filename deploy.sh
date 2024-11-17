@@ -1,10 +1,32 @@
 #!/bin/bash
 
-# Build listener
-go build -o build/listener cmd/listener/main.go
+usage() {
+    echo "Usage: $0 [--help] [--build]"
+    echo "  --help   Show help"
+    echo "  --build  Build the app"
+    exit 1
+}
 
-# Build broadcaster
-go build -o build/broadcaster cmd/broadcaster/main.go
+for arg in "$@"; do
+    case "$arg" in
+        --help)
+            usage
+            ;;
+        --build)
+            # Build listener
+            go build -o build/listener cmd/listener/main.go
+
+            # Build broadcaster
+            go build -o build/broadcaster cmd/broadcaster/main.go
+            exit 0
+            ;;
+        *)
+            echo "Invalid option: $arg" >&2
+            usage
+            ;;
+    esac
+done
+
 
 # Get bastion host name, resource group, VM resource IDs
 
@@ -19,8 +41,8 @@ echo $RESOURCE_GROUP_NAME
 
 readarray -t VM_RESOURCE_IDS < <(terraform -chdir=infra output -json vm_resource_ids | jq -r '.[].[]')
 
-echo ${VM_RESOURCE_IDS[0]}
-echo ${VM_RESOURCE_IDS[1]}
+# echo ${VM_RESOURCE_IDS[0]}
+# echo ${VM_RESOURCE_IDS[1]}
 
 
 # For each VM 
@@ -32,27 +54,43 @@ echo ${VM_RESOURCE_IDS[1]}
 #  - start listener
 #  - start broadcaster
 
-echo "Creating tunnel"
-# Create tunnel
-az network bastion tunnel --name $BASTION_HOST_NAME --resource-group $RESOURCE_GROUP_NAME --target-resource-id ${VM_RESOURCE_IDS[0]} --resource-port 22 --port 9000 >blocking_output.log 2>&1 &
-BLOCKING_PID=$!  # 
+nrOfIDs=${#VM_RESOURCE_IDS[@]}
 
 
-echo "Waiting for the blocking command to start..."
-while ! grep -q "Tunnel is ready, connect on port 9000" blocking_output.log; do
-    sleep 0.5  # Check periodically
+upload_port=9000
+
+
+for id in  $(seq 1 $nrOfIDs)
+do
+    VM_RESOURCE_ID=${VM_RESOURCE_IDS[$id -1]}
+
+    while lsof -Pi ":${upload_port}" -sTCP:LISTEN -t >/dev/null; do
+        echo "port ${upload_port} is used currently"
+        upload_port=$((upload_port+1))
+        sleep 1  # Check periodically
+    done
+
+    echo "Creating tunnel"
+    # Create tunnel
+    az network bastion tunnel --name $BASTION_HOST_NAME --resource-group $RESOURCE_GROUP_NAME --target-resource-id ${VM_RESOURCE_ID} --resource-port 22 --port $upload_port >blocking_output.log 2>&1 &
+    BLOCKING_PID=$!  # 
+
+    echo "Waiting for the blocking command to start..."
+    while ! grep -q "Tunnel is ready, connect on port ${upload_port}" blocking_output.log; do
+        sleep 0.5  # Check periodically
+    done
+
+    ssh-keygen -f ~/.ssh/known_hosts -R "[127.0.0.1]:${upload_port}"
+    scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port ./build/broadcaster azureuser@127.0.0.1:/home/azureuser/
+    scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port ./build/listener azureuser@127.0.0.1:/home/azureuser/
+
+
+    echo "Stopping the blocking command (PID: $BLOCKING_PID)..."
+    kill $BLOCKING_PID
+
+    wait $BLOCKING_PID 2>/dev/null
+
 done
-
-
-ssh-keygen -f ~/.ssh/known_hosts -R '[127.0.0.1]:9000'
-scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P 9000 ./build/broadcaster azureuser@127.0.0.1:/home/azureuser/
-scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P 9000 ./build/listener azureuser@127.0.0.1:/home/azureuser/
-
-
-echo "Stopping the blocking command (PID: $BLOCKING_PID)..."
-kill $BLOCKING_PID
-
-wait $BLOCKING_PID 2>/dev/null
 
 echo "All tasks completed!"
 
