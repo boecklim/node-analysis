@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
@@ -20,17 +22,26 @@ func main() {
 }
 
 const (
-	host     = "localhost"
-	user     = "bitcoin"
-	password = "bitcoin"
-	rpcPort  = 18443
-	zmqPort  = 29000
+	hostDefault    = "localhost"
+	zmqPortDefault = 29000
 )
 
 func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	zmqURLString := fmt.Sprintf("zmq://%s:%d", host, zmqPort)
+	zmqPort := flag.Int("port", zmqPortDefault, "port of listener client")
+	if zmqPort == nil {
+		return errors.New("rpc port not given")
+	}
+
+	zmqHost := flag.String("host", hostDefault, "host of listener client")
+	if zmqHost == nil {
+		return errors.New("rpc host not given")
+	}
+
+	flag.Parse()
+
+	zmqURLString := fmt.Sprintf("zmq://%s:%d", *zmqHost, *zmqPort)
 
 	zmqURL, err := url.Parse(zmqURLString)
 	if err != nil {
@@ -40,7 +51,7 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	zmqSubscriber, err := zmq.NewZMQWithContext(ctx, host, zmqPort, logger)
+	zmqSubscriber, err := zmq.NewZMQWithContext(ctx, *zmqHost, *zmqPort, logger)
 	if err != nil {
 		return err
 	}
