@@ -5,18 +5,25 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "run listener",
+            "name": "run listener bsv",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/listener/main.go"
+            "program": "${workspaceFolder}/cmd/listener/main.go",
+            "args": [
+                "-port=28332"
+            ]
         },
         {
-            "name": "run broadcaster",
+            "name": "run broadcaster bsv",
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "${workspaceFolder}/cmd/broadcaster/main.go"
+            "program": "${workspaceFolder}/cmd/broadcaster/main.go",
+            "args": [
+                "-port=18332",
+                "-blockchain=bsv"
+            ]
         }
     ]
 }

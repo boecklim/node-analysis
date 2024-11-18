@@ -4,10 +4,10 @@ services:
     image: bitcoinsv/bitcoin-sv:1.1.0
     ports:
       - "18332:18332"
+      - "28332:28332"
     expose:
       - "18332"
       - "18333"
-      - "28332"
     healthcheck:
       test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
     volumes:
@@ -19,7 +19,8 @@ services:
     container_name: node2
     image: bitcoinsv/bitcoin-sv:1.1.0
     ports:
-      - "48332:18332"
+      - "18333:18332"
+      - "28333:28332"
     expose:
       - "18332"
       - "18333"
@@ -34,7 +35,8 @@ services:
     container_name: node3
     image: bitcoinsv/bitcoin-sv:1.1.0
     ports:
-      - "58332:18332"
+      - "18334:18332"
+      - "28334:28332"
     expose:
       - "18332"
       - "18333"
