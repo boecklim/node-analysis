@@ -1,4 +1,4 @@
-package processor
+package broadcaster
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-func (b *Processor) Start(rateTxsPerSecond int64, limit int64) error {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 	b.limit = limit
 	b.wg.Add(1)
 	go func() {
@@ -118,7 +118,7 @@ func (b *Processor) Start(rateTxsPerSecond int64, limit int64) error {
 	return nil
 }
 
-func (b *Processor) createSelfPayingTx(txOut utils.TxOut) (*wire.MsgTx, error) {
+func (b *Broadcaster) createSelfPayingTx(txOut utils.TxOut) (*wire.MsgTx, error) {
 
 	b.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
 
@@ -151,7 +151,7 @@ func (b *Processor) createSelfPayingTx(txOut utils.TxOut) (*wire.MsgTx, error) {
 	return tx, nil
 }
 
-func (b *Processor) Shutdown() {
+func (b *Broadcaster) Shutdown() {
 	b.cancelAll()
 
 	b.wg.Wait()

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"node-analysis/processor"
+	"node-analysis/broadcaster"
 	"os"
 	"os/signal"
 
@@ -13,7 +13,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/lmittmann/tint"
 )
 
 func main() {
@@ -34,7 +33,7 @@ const (
 )
 
 func run() error {
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	client, err := rpcclient.New(&rpcclient.ConnConfig{
 		Host:         fmt.Sprintf("%s:%d", host, rpcPort),
@@ -71,7 +70,7 @@ func run() error {
 	}
 	logger.Info("address", "address", address.EncodeAddress())
 
-	p, err := processor.New(client, logger, address, privKey)
+	p, err := broadcaster.New(client, logger, address, privKey)
 	if err != nil {
 		return err
 	}

@@ -8,8 +8,6 @@ import (
 	"net/url"
 	"node-analysis/zmq"
 	"os"
-
-	"github.com/lmittmann/tint"
 )
 
 func main() {
@@ -30,7 +28,7 @@ const (
 )
 
 func run() error {
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	zmqURLString := fmt.Sprintf("zmq://%s:%d", host, zmqPort)
 

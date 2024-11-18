@@ -1,4 +1,4 @@
-package processor
+package broadcaster
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-type Processor struct {
+type Broadcaster struct {
 	client           *rpcclient.Client
 	address          btcutil.Address
 	addressScriptHex string
@@ -50,13 +50,13 @@ const (
 	fee                        = 3000
 )
 
-func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) (*Processor, error) {
+func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) (*Broadcaster, error) {
 
 	pkScript, err := txscript.PayToAddrScript(address)
 	if err != nil {
 		return nil, err
 	}
-	p := &Processor{
+	p := &Broadcaster{
 		client:           client,
 		logger:           logger,
 		address:          address,
@@ -75,7 +75,7 @@ func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address,
 	return p, nil
 }
 
-func (p *Processor) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
+func (p *Broadcaster) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
 		return utils.TxOut{}, err
@@ -101,7 +101,7 @@ func (p *Processor) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.
 	}, nil
 }
 
-func (p *Processor) PrepareUtxos() error {
+func (p *Broadcaster) PrepareUtxos() error {
 
 	info, err := p.client.GetMiningInfo()
 	if err != nil {
