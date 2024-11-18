@@ -2,10 +2,15 @@ package main
 
 import (
 	"encoding/hex"
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"log/slog"
+	"net/url"
 	"node-analysis/broadcaster"
+	"node-analysis/node_client/bsv"
+	"node-analysis/node_client/btc"
 	"os"
 	"os/signal"
 
@@ -13,6 +18,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/ordishs/go-bitcoin"
 )
 
 func main() {
@@ -25,38 +31,95 @@ func main() {
 }
 
 const (
-	host     = "localhost"
-	user     = "bitcoin"
-	password = "bitcoin"
-	rpcPort  = 18443
-	zmqPort  = 29000
+	rpcUser        = "bitcoin"
+	rpcPassword    = "bitcoin"
+	rpcHostDefault = "localhost"
+	rpcPortDefault = 18443
+	bsvBlockchain  = "bsv"
+	btcBlockchain  = "btc"
 )
 
 func run() error {
+
+	blockchain := flag.String("blockchain", "btc", "one of btc | bsv")
+	if blockchain == nil {
+		return errors.New("blockchain not given")
+	}
+
+	rpcPort := flag.Int("port", rpcPortDefault, "port of RPC client")
+	if rpcPort == nil {
+		return errors.New("rpc port not given")
+	}
+
+	rpcHost := flag.String("host", rpcHostDefault, "host of RPC client")
+	if rpcHost == nil {
+		return errors.New("rpc host not given")
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	client, err := rpcclient.New(&rpcclient.ConnConfig{
-		Host:         fmt.Sprintf("%s:%d", host, rpcPort),
-		User:         user,
-		Pass:         password,
-		HTTPPostMode: true,
-		DisableTLS:   true,
-	}, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create rpc client: %v", err)
-	}
-	info, err := client.GetMiningInfo()
-	if err != nil {
-		return fmt.Errorf("failed to get info: %v", err)
-	}
+	var client broadcaster.RPCClient
 
-	networkInfo, err := client.GetNetworkInfo()
-	if err != nil {
-		return err
-	}
+	switch *blockchain {
+	case btcBlockchain:
+		btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
+			Host:         fmt.Sprintf("%s:%d", *rpcHost, *rpcPort),
+			User:         rpcUser,
+			Pass:         rpcPassword,
+			HTTPPostMode: true,
+			DisableTLS:   true,
+		}, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create btc rpc client: %v", err)
+		}
+		info, err := btcClient.GetMiningInfo()
+		if err != nil {
+			return fmt.Errorf("failed to get info: %v", err)
+		}
 
-	logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
-	logger.Info("network info", "version", networkInfo.Version)
+		networkInfo, err := btcClient.GetNetworkInfo()
+		if err != nil {
+			return err
+		}
+
+		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+		logger.Info("network info", "version", networkInfo.Version)
+		client, err = btc.New(btcClient)
+		if err != nil {
+			return fmt.Errorf("failed to create rpc client: %v", err)
+		}
+	case bsvBlockchain:
+		rpcURL, err := url.Parse(fmt.Sprintf("rpc://%s:%s@%s:%d", rpcUser, rpcPassword, *rpcHost, *rpcPort))
+		if err != nil {
+			return fmt.Errorf("failed to parse node rpc url: %w", err)
+		}
+
+		bsvClient, err := bitcoin.NewFromURL(rpcURL, false)
+		if err != nil {
+			return fmt.Errorf("failed to create bitcoin client: %w", err)
+		}
+
+		info, err := bsvClient.GetMiningInfo()
+		if err != nil {
+			return fmt.Errorf("failed to get info: %v", err)
+		}
+
+		networkInfo, err := bsvClient.GetNetworkInfo()
+		if err != nil {
+			return err
+		}
+
+		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+		logger.Info("network info", "version", networkInfo.Version)
+
+		client, err = bsv.New(bsvClient)
+		if err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
+	}
 
 	privKeyBytes, err := hex.DecodeString("13d2c242e1286ce48b86d51742e4a9a44398e36a0400fdb87425a014538a7413")
 	if err != nil {

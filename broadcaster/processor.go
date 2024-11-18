@@ -12,13 +12,20 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 )
 
+type RPCClient interface {
+	GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error)
+	GetBlocks() (int64, error)
+	GenerateToAddress(numBlocks int64, address btcutil.Address) error
+	GetBlockHash(blockHeight int64) (*chainhash.Hash, error)
+	SendRawTransaction(tx *wire.MsgTx) (*chainhash.Hash, error)
+}
+
 type Broadcaster struct {
-	client           *rpcclient.Client
+	client           RPCClient
 	address          btcutil.Address
 	addressScriptHex string
 	pkScript         []byte
@@ -50,7 +57,7 @@ const (
 	fee                        = 3000
 )
 
-func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) (*Broadcaster, error) {
+func New(client RPCClient, logger *slog.Logger, address btcutil.Address, privKey *btcec.PrivateKey) (*Broadcaster, error) {
 
 	pkScript, err := txscript.PayToAddrScript(address)
 	if err != nil {
@@ -75,45 +82,19 @@ func New(client *rpcclient.Client, logger *slog.Logger, address btcutil.Address,
 	return p, nil
 }
 
-func (p *Broadcaster) GetCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
-	lastBlock, err := p.client.GetBlock(blockHash)
-	if err != nil {
-		return utils.TxOut{}, err
-	}
-
-	txHash := lastBlock.Transactions[0].TxHash()
-
-	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
-	txOut, err := p.client.GetTxOut(&txHash, coinBaseVout, false)
-	if err != nil {
-		return utils.TxOut{}, err
-	}
-
-	if txOut == nil {
-		return utils.TxOut{}, ErrOutputSpent
-	}
-
-	return utils.TxOut{
-		Hash:            &txHash,
-		ValueSat:        int64(txOut.Value * satPerBtc),
-		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
-		VOut:            0,
-	}, nil
-}
-
 func (p *Broadcaster) PrepareUtxos() error {
 
-	info, err := p.client.GetMiningInfo()
+	blocks, err := p.client.GetBlocks()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
 	}
 
-	if info.Blocks <= coinbaseSpendableAfterConf {
+	if blocks <= coinbaseSpendableAfterConf {
 
-		blocksToGenerate := coinbaseSpendableAfterConf + 1 - info.Blocks
+		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
 		p.logger.Info("generating blocks", "number", blocksToGenerate)
 
-		_, err := p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
+		err := p.client.GenerateToAddress(blocksToGenerate, p.address)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -121,22 +102,22 @@ func (p *Broadcaster) PrepareUtxos() error {
 
 	for len(p.utxoChannel) < targetUtxos {
 
-		_, err := p.client.GenerateToAddress(1, p.address, nil)
+		err := p.client.GenerateToAddress(1, p.address)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
 
-		info, err = p.client.GetMiningInfo()
+		blocks, err = p.client.GetBlocks()
 		if err != nil {
 			return fmt.Errorf("failed to get info: %v", err)
 		}
 
-		blockHash, err := p.client.GetBlockHash(info.Blocks - coinbaseSpendableAfterConf)
+		blockHash, err := p.client.GetBlockHash(blocks - coinbaseSpendableAfterConf)
 		if err != nil {
 			return err
 		}
 
-		txOut, err := p.GetCoinbaseTxOutFromBlock(blockHash)
+		txOut, err := p.client.GetCoinbaseTxOutFromBlock(blockHash)
 		if err != nil {
 			if errors.Is(err, ErrOutputSpent) {
 				continue
@@ -151,7 +132,7 @@ func (p *Broadcaster) PrepareUtxos() error {
 			return err
 		}
 
-		sentTxHash, err := p.client.SendRawTransaction(tx, false)
+		sentTxHash, err := p.client.SendRawTransaction(tx)
 		if err != nil {
 			return err
 		}

@@ -64,7 +64,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 				}
 
 				b.logger.Debug("submitting tx", "hash", tx.TxID())
-				hash, err := b.client.SendRawTransaction(tx, false)
+				hash, err := b.client.SendRawTransaction(tx)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						return
