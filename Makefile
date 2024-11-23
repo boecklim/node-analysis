@@ -7,3 +7,7 @@ run-bsv:
 .PHONY: stop-bsv
 stop-bsv:
 	docker-compose down
+
+.PHONY: lint
+lint:
+	golangci-lint run -v ./...
