@@ -52,7 +52,6 @@ func NewZMQ(host string, port int, logger *slog.Logger) (*ZMQ, error) {
 }
 
 func NewZMQWithContext(ctx context.Context, host string, port int, logger *slog.Logger) (*ZMQ, error) {
-
 	zmq := &ZMQ{
 		address:            fmt.Sprintf("tcp://%s:%d", host, port),
 		subscriptions:      make(map[string][]chan []string),
@@ -86,7 +85,6 @@ dialLoop:
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-
 			if counter >= 5 {
 				return errors.New("failed to connect to ZMQ after 5 retries")
 			}
@@ -101,7 +99,6 @@ dialLoop:
 			}
 
 			break dialLoop
-
 		}
 	}
 
@@ -115,7 +112,6 @@ dialLoop:
 	}
 
 	return nil
-
 }
 
 func (zmq *ZMQ) Subscribe(topic string, ch chan []string) error {
@@ -146,7 +142,6 @@ func (zmq *ZMQ) Unsubscribe(topic string, ch chan []string) error {
 
 func (zmq *ZMQ) start(ctx context.Context) {
 	for {
-
 	OUT:
 		for {
 			select {
@@ -212,15 +207,5 @@ func (zmq *ZMQ) start(ctx context.Context) {
 		}
 		log.Printf("Attempting to re-establish ZMQ connection in 10 seconds...")
 		time.Sleep(10 * time.Second)
-
 	}
-}
-
-func contains(s []string, e string) bool {
-	for _, a := range s {
-		if a == e {
-			return true
-		}
-	}
-	return false
 }

@@ -12,13 +12,13 @@ const (
 	pubhashtx    = "hashtx"
 )
 
-type ZMQClient struct {
+type Client struct {
 	url    *url.URL
 	logger *slog.Logger
 }
 
-func NewZMQClient(zmqURL *url.URL, logger *slog.Logger) *ZMQClient {
-	z := &ZMQClient{
+func NewZMQClient(zmqURL *url.URL, logger *slog.Logger) *Client {
+	z := &Client{
 		url:    zmqURL,
 		logger: logger,
 	}
@@ -26,11 +26,11 @@ func NewZMQClient(zmqURL *url.URL, logger *slog.Logger) *ZMQClient {
 	return z
 }
 
-type ZMQI interface {
+type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (z *ZMQClient) Start(ctx context.Context, zmqi ZMQI) error {
+func (z *Client) Start(ctx context.Context, zmqi ClientI) error {
 	ch := make(chan []string)
 
 	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {

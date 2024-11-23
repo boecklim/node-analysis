@@ -3,17 +3,75 @@ package broadcaster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"node-analysis/utils"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 )
+
+type RPCClient interface {
+	PrepareUtxos(utxoChannel chan utils.TxOut) error
+	SubmitSelfPayingSingleOutputTx(txOut utils.TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
+}
+
+type Broadcaster struct {
+	client           RPCClient
+	addressScriptHex string
+	logger           *slog.Logger
+	utxoChannel      chan utils.TxOut
+
+	cancelAll context.CancelFunc
+	ctx       context.Context
+	shutdown  chan struct{}
+	wg        sync.WaitGroup
+	totalTxs  int64
+	limit     int64
+	txChannel chan *wire.MsgTx
+}
+
+var (
+	ErrOutputSpent = errors.New("output already spent")
+)
+
+const (
+	targetUtxos                = 150
+	outputsPerTx               = 20 // must be lower than 25 other wise err="-26: too-long-mempool-chain, too many descendants for tx ..."
+	coinBaseVout               = 0
+	satPerBtc                  = 1e8
+	coinbaseSpendableAfterConf = 100
+	millisecondsPerSecond      = 1000
+	fee                        = 3000
+)
+
+func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
+	b := &Broadcaster{
+		client:      client,
+		logger:      logger,
+		utxoChannel: make(chan utils.TxOut, 10100),
+		shutdown:    make(chan struct{}, 1),
+		txChannel:   make(chan *wire.MsgTx, 10100),
+	}
+
+	ctx, cancelAll := context.WithCancel(context.Background())
+	b.cancelAll = cancelAll
+	b.ctx = ctx
+
+	return b, nil
+}
+
+func (b *Broadcaster) PrepareUtxos() error {
+	err := b.client.PrepareUtxos(b.utxoChannel)
+	if err != nil {
+		return fmt.Errorf("failed to prepare utxos: %v", err)
+	}
+
+	return nil
+}
 
 func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 	b.limit = limit
@@ -56,54 +114,34 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 				}
 
 				txOut := <-b.utxoChannel
-				tx, err := b.createSelfPayingTx(txOut)
-				if err != nil {
-					b.logger.Error("failed to create self paying tx", slog.String("err", err.Error()))
-					b.shutdown <- struct{}{}
-					continue
-				}
 
-				b.logger.Debug("submitting tx", "hash", tx.TxID())
-				hash, err := b.client.SendRawTransaction(tx)
+				hash, satoshis, err := b.client.SubmitSelfPayingSingleOutputTx(txOut)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						return
 					}
 
-					b.logger.Error("submitting tx failed", "hash", tx.TxID())
+					b.logger.Error("submitting tx failed", "hash", txOut.Hash.String())
 
-					txHash := tx.TxHash()
-
-					sat, found := b.satoshiMap.Load(tx.TxID())
-					satoshis, isValid := sat.(int64)
-					if found && isValid {
-						b.utxoChannel <- utils.TxOut{
-							Hash:            &txHash,
-							ScriptPubKeyHex: b.addressScriptHex,
-							ValueSat:        satoshis,
-							VOut:            0,
-						}
+					b.utxoChannel <- utils.TxOut{
+						Hash:            hash,
+						ScriptPubKeyHex: b.addressScriptHex,
+						ValueSat:        satoshis,
+						VOut:            0,
 					}
 
 					errCh <- err
 					continue
 				}
 
-				b.logger.Debug("submitting tx successful", "hash", tx.TxID())
-				sat, found := b.satoshiMap.Load(tx.TxID())
-				satoshis, isValid := sat.(int64)
-
-				if found && isValid {
-					newUtxo := utils.TxOut{
-						Hash:            hash,
-						ScriptPubKeyHex: b.addressScriptHex,
-						ValueSat:        satoshis,
-						VOut:            0,
-					}
-					b.utxoChannel <- newUtxo
+				b.logger.Debug("submitting tx successful", "hash", hash.String())
+				newUtxo := utils.TxOut{
+					Hash:            hash,
+					ScriptPubKeyHex: b.addressScriptHex,
+					ValueSat:        satoshis,
+					VOut:            0,
 				}
-
-				b.satoshiMap.Delete(tx.TxID())
+				b.utxoChannel <- newUtxo
 
 				atomic.AddInt64(&b.totalTxs, 1)
 
@@ -116,39 +154,6 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 	b.wg.Wait()
 
 	return nil
-}
-
-func (b *Broadcaster) createSelfPayingTx(txOut utils.TxOut) (*wire.MsgTx, error) {
-
-	b.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
-
-	tx := wire.NewMsgTx(wire.TxVersion)
-	amount := txOut.ValueSat
-
-	prevOut := wire.NewOutPoint(txOut.Hash, txOut.VOut)
-	input := wire.NewTxIn(prevOut, nil, nil)
-
-	tx.AddTxIn(input)
-
-	amount -= fee
-
-	tx.AddTxOut(wire.NewTxOut(amount, []byte(b.pkScript)))
-
-	lookupKey := func(a btcutil.Address) (*btcec.PrivateKey, bool, error) {
-		return b.privKey, true, nil
-	}
-	sigScript, err := txscript.SignTxOutput(&chaincfg.MainNetParams,
-		tx, 0, b.pkScript, txscript.SigHashAll,
-		txscript.KeyClosure(lookupKey), nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	tx.TxIn[0].SignatureScript = sigScript
-
-	b.logger.Debug("tx created", "hash", tx.TxID())
-
-	b.satoshiMap.Store(tx.TxID(), tx.TxOut[0].Value)
-	return tx, nil
 }
 
 func (b *Broadcaster) Shutdown() {

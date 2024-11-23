@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,9 +13,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/ordishs/go-bitcoin"
 )
@@ -40,7 +36,6 @@ const (
 )
 
 func run() error {
-
 	blockchain := flag.String("blockchain", "btc", "one of btc | bsv")
 	if blockchain == nil {
 		return errors.New("blockchain not given")
@@ -55,6 +50,18 @@ func run() error {
 	if rpcHost == nil {
 		return errors.New("rpc host not given")
 	}
+
+	txsRate := flag.Int64("rate", 5, "rate in txs per second")
+	if txsRate == nil {
+		return errors.New("rate not given")
+	}
+
+	limit := flag.Int64("limit", 20, "limit of txs at which to stop broadcastiong")
+	if limit == nil {
+		return errors.New("limit host not given")
+	}
+
+	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -121,19 +128,7 @@ func run() error {
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
 	}
 
-	privKeyBytes, err := hex.DecodeString("13d2c242e1286ce48b86d51742e4a9a44398e36a0400fdb87425a014538a7413")
-	if err != nil {
-		return err
-	}
-	privKey, pubKey := btcec.PrivKeyFromBytes(privKeyBytes)
-	address, err := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(),
-		&chaincfg.RegressionNetParams)
-	if err != nil {
-		return err
-	}
-	logger.Info("address", "address", address.EncodeAddress())
-
-	p, err := broadcaster.New(client, logger, address, privKey)
+	p, err := broadcaster.New(client, logger)
 	if err != nil {
 		return err
 	}
@@ -149,7 +144,7 @@ func run() error {
 
 	go func() {
 		// Start the broadcasting process
-		err = p.Start(20, 100)
+		err = p.Start(*txsRate, *limit)
 		logger.Info("Starting broadcaster")
 		doneChan <- err // Send the completion or error signal
 	}()
