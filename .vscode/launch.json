@@ -24,6 +24,17 @@
                 "-port=18332",
                 "-blockchain=bsv"
             ]
+        },
+        {
+            "name": "run broadcaster btc",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/broadcaster/main.go",
+            "args": [
+                "-port=18332",
+                "-blockchain=btc"
+            ]
         }
     ]
 }
