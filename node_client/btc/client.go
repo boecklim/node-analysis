@@ -1,14 +1,12 @@
 package btc
 
 import (
-	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
 	"node-analysis/broadcaster"
-	"node-analysis/utils"
 	"os"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -25,8 +23,7 @@ const (
 	satPerBtc                  = 1e8
 	coinbaseSpendableAfterConf = 100
 	targetUtxos                = 150
-	outputsPerTx               = 20 // must be lower than 25 other wise err="-26: too-long-mempool-chain, too many descendants for tx ..."
-	millisecondsPerSecond      = 1000
+	outputsPerTx               = 20 // must be lower than 25 otherwise err="-26: too-long-mempool-chain, too many descendants for tx ..."
 	fee                        = 3000
 )
 
@@ -56,20 +53,13 @@ func New(client *rpcclient.Client) (*Client, error) {
 		return nil, err
 	}
 
-	pkScript, err := txscript.PayToAddrScript(p.address)
-	if err != nil {
-		return nil, err
-	}
-
-	p.pkScript = pkScript
-
 	return p, nil
 }
 
-func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxOut, error) {
+func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (broadcaster.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
-		return utils.TxOut{}, err
+		return broadcaster.TxOut{}, err
 	}
 
 	txHash := lastBlock.Transactions[0].TxHash()
@@ -77,14 +67,14 @@ func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (utils.TxO
 	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
 	txOut, err := p.client.GetTxOut(&txHash, coinBaseVout, false)
 	if err != nil {
-		return utils.TxOut{}, err
+		return broadcaster.TxOut{}, err
 	}
 
 	if txOut == nil {
-		return utils.TxOut{}, ErrOutputSpent
+		return broadcaster.TxOut{}, ErrOutputSpent
 	}
 
-	return utils.TxOut{
+	return broadcaster.TxOut{
 		Hash:            &txHash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
@@ -101,7 +91,7 @@ func (p *Client) getBlocks() (int64, error) {
 	return info.Blocks, nil
 }
 
-func (p *Client) SubmitSelfPayingSingleOutputTx(txOut utils.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
+func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	tx, err := p.createSelfPayingTx(txOut)
 	if err != nil {
 		return nil, 0, err
@@ -115,7 +105,7 @@ func (p *Client) SubmitSelfPayingSingleOutputTx(txOut utils.TxOut) (txHash *chai
 	return txHash, tx.TxOut[0].Value, nil
 }
 
-func (p *Client) createSelfPayingTx(txOut utils.TxOut) (*wire.MsgTx, error) {
+func (p *Client) createSelfPayingTx(txOut broadcaster.TxOut) (*wire.MsgTx, error) {
 	p.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
 
 	tx := wire.NewMsgTx(wire.TxVersion)
@@ -160,10 +150,19 @@ func (p *Client) setAddress() error {
 
 	p.address = address
 	p.privKey = privKey
+
+	p.logger.Info("address", "address", address.EncodeAddress())
+
+	pkScript, err := txscript.PayToAddrScript(p.address)
+	if err != nil {
+		return err
+	}
+
+	p.pkScript = pkScript
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
+func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
 	blocks, err := p.getBlocks()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
@@ -173,14 +172,14 @@ func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
 		p.logger.Info("generating blocks", "number", blocksToGenerate)
 
-		_, err := p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
+		_, err = p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
 	}
 
 	for len(utxoChannel) < targetUtxos {
-		_, err := p.client.GenerateToAddress(1, p.address, nil)
+		_, err = p.client.GenerateToAddress(1, p.address, nil)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -191,12 +190,14 @@ func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
 		}
 
 		blockHeight := blocks - coinbaseSpendableAfterConf
-		blockHash, err := p.client.GetBlockHash(blockHeight)
+		var blockHash *chainhash.Hash
+		blockHash, err = p.client.GetBlockHash(blockHeight)
 		if err != nil {
 			return fmt.Errorf("failed go get block hash at height %d: %v", blockHeight, err)
 		}
 
-		txOut, err := p.getCoinbaseTxOutFromBlock(blockHash)
+		var txOut broadcaster.TxOut
+		txOut, err = p.getCoinbaseTxOutFromBlock(blockHash)
 		if err != nil {
 			if errors.Is(err, ErrOutputSpent) {
 				continue
@@ -206,21 +207,14 @@ func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
 
 		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
 
-		tx, err := splitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
+		var tx *wire.MsgTx
+		tx, err = splitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
 		if err != nil {
 			return fmt.Errorf("failed split to address: %v", err)
 		}
 
-		buf := new(bytes.Buffer)
-
-		err = tx.Serialize(buf)
-		if err != nil {
-			return fmt.Errorf("failed to serialize tx: %v", err)
-		}
-
-		fmt.Println(hex.EncodeToString(buf.Bytes()))
-
-		sentTxHash, err := p.client.SendRawTransaction(tx, false)
+		var sentTxHash *chainhash.Hash
+		sentTxHash, err = p.client.SendRawTransaction(tx, false)
 		if err != nil {
 			return fmt.Errorf("failed to send raw tx: %v", err)
 		}
@@ -228,21 +222,19 @@ func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
 		p.logger.Info("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
 
 		for i, output := range tx.TxOut {
-			txOut := utils.TxOut{
+			utxoChannel <- broadcaster.TxOut{
 				Hash:            sentTxHash,
 				ScriptPubKeyHex: hex.EncodeToString(output.PkScript),
 				ValueSat:        output.Value,
 				VOut:            uint32(i),
 			}
-
-			utxoChannel <- txOut
 		}
 	}
 
 	return nil
 }
 
-func splitToAddress(address btcutil.Address, txOut utils.TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
+func splitToAddress(address btcutil.Address, txOut broadcaster.TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	prevOut := wire.NewOutPoint(txOut.Hash, 0)
@@ -259,11 +251,11 @@ func splitToAddress(address btcutil.Address, txOut utils.TxOut, outputs int, pri
 	satPerOutput := int64(math.Floor(float64(txOut.ValueSat) / float64(outputs+1)))
 
 	for range outputs {
-		tx.AddTxOut(wire.NewTxOut(satPerOutput, []byte(pkScript)))
+		tx.AddTxOut(wire.NewTxOut(satPerOutput, pkScript))
 		remainingSat -= satPerOutput
 	}
 
-	tx.AddTxOut(wire.NewTxOut(remainingSat-fee, []byte(pkScript)))
+	tx.AddTxOut(wire.NewTxOut(remainingSat-fee, pkScript))
 
 	lookupKey := func(_ btcutil.Address) (*btcec.PrivateKey, bool, error) {
 		return privKey, true, nil

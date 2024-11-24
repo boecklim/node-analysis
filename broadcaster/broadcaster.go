@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"node-analysis/utils"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,15 +14,15 @@ import (
 )
 
 type RPCClient interface {
-	PrepareUtxos(utxoChannel chan utils.TxOut) error
-	SubmitSelfPayingSingleOutputTx(txOut utils.TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
+	PrepareUtxos(utxoChannel chan TxOut) error
+	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 }
 
 type Broadcaster struct {
 	client           RPCClient
 	addressScriptHex string
 	logger           *slog.Logger
-	utxoChannel      chan utils.TxOut
+	utxoChannel      chan TxOut
 
 	cancelAll context.CancelFunc
 	ctx       context.Context
@@ -34,25 +33,15 @@ type Broadcaster struct {
 	txChannel chan *wire.MsgTx
 }
 
-var (
-	ErrOutputSpent = errors.New("output already spent")
-)
-
 const (
-	targetUtxos                = 150
-	outputsPerTx               = 20 // must be lower than 25 other wise err="-26: too-long-mempool-chain, too many descendants for tx ..."
-	coinBaseVout               = 0
-	satPerBtc                  = 1e8
-	coinbaseSpendableAfterConf = 100
-	millisecondsPerSecond      = 1000
-	fee                        = 3000
+	millisecondsPerSecond = 1000
 )
 
 func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 	b := &Broadcaster{
 		client:      client,
 		logger:      logger,
-		utxoChannel: make(chan utils.TxOut, 10100),
+		utxoChannel: make(chan TxOut, 10100),
 		shutdown:    make(chan struct{}, 1),
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
@@ -123,7 +112,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 
 					b.logger.Error("submitting tx failed", "hash", txOut.Hash.String())
 
-					b.utxoChannel <- utils.TxOut{
+					b.utxoChannel <- TxOut{
 						Hash:            hash,
 						ScriptPubKeyHex: b.addressScriptHex,
 						ValueSat:        satoshis,
@@ -135,7 +124,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 				}
 
 				b.logger.Debug("submitting tx successful", "hash", hash.String())
-				newUtxo := utils.TxOut{
+				newUtxo := TxOut{
 					Hash:            hash,
 					ScriptPubKeyHex: b.addressScriptHex,
 					ValueSat:        satoshis,
@@ -160,4 +149,11 @@ func (b *Broadcaster) Shutdown() {
 	b.cancelAll()
 
 	b.wg.Wait()
+}
+
+type TxOut struct {
+	Hash            *chainhash.Hash
+	ScriptPubKeyHex string
+	ValueSat        int64
+	VOut            uint32
 }

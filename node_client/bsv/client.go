@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math"
 	"node-analysis/broadcaster"
-	"node-analysis/utils"
 	"os"
 	"time"
 
@@ -21,13 +20,9 @@ import (
 )
 
 const (
-	coinBaseVout               = 0
-	satPerBtc                  = 1e8
-	coinbaseSpendableAfterConf = 100
-	targetUtxos                = 150
-	outputsPerTx               = 20 // must be lower than 25 other wise err="-26: too-long-mempool-chain, too many descendants for tx ..."
-	millisecondsPerSecond      = 1000
-	fee                        = 3000
+	coinBaseVout = 0
+	satPerBtc    = 1e8
+	targetUtxos  = 150
 )
 
 var _ broadcaster.RPCClient = &Client{}
@@ -52,10 +47,10 @@ func New(client *bitcoin.Bitcoind) (*Client, error) {
 	return p, nil
 }
 
-func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (utils.TxOut, error) {
+func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
-		return utils.TxOut{}, err
+		return broadcaster.TxOut{}, err
 	}
 
 	txHash := lastBlock.Tx[0]
@@ -63,19 +58,19 @@ func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (utils.TxOut, error
 	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
 	txOut, err := p.client.GetTxOut(txHash, coinBaseVout, false)
 	if err != nil {
-		return utils.TxOut{}, err
+		return broadcaster.TxOut{}, err
 	}
 
 	if txOut == nil {
-		return utils.TxOut{}, ErrOutputSpent
+		return broadcaster.TxOut{}, ErrOutputSpent
 	}
 
 	hash, err := chainhash.NewHashFromStr(txHash)
 	if err != nil {
-		return utils.TxOut{}, err
+		return broadcaster.TxOut{}, err
 	}
 
-	return utils.TxOut{
+	return broadcaster.TxOut{
 		Hash:            hash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
@@ -83,7 +78,7 @@ func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (utils.TxOut, error
 	}, nil
 }
 
-func (p *Client) SubmitSelfPayingSingleOutputTx(txOut utils.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
+func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	tx := sdkTx.NewTransaction()
 
 	utxo, err := sdkTx.NewUTXO(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))
@@ -150,7 +145,7 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
+func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
 	info, err := p.client.GetInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
@@ -221,7 +216,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan utils.TxOut) error {
 				return fmt.Errorf("failed to create tx hash: %v", err)
 			}
 
-			txOut := utils.TxOut{
+			txOut := broadcaster.TxOut{
 				Hash:            hash,
 				ScriptPubKeyHex: hex.EncodeToString(*output.LockingScript),
 				ValueSat:        int64(output.Satoshis),
