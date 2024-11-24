@@ -15,3 +15,9 @@ variable "virtual_machines" {
   description = "Number of virtual machines to be created"
   default = 5
 }
+
+variable "use_btc" {
+  type = bool
+  description = "Whether to use BTC or BSV blockchain - true: BTC | false: BSV"
+  default = true
+}

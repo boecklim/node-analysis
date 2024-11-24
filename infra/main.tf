@@ -147,10 +147,10 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
     version   = "latest"
   }
   
-  custom_data = data.template_cloudinit_config.config.rendered
+  custom_data = var.use_btc ? data.template_cloudinit_config.config_btc.rendered : data.template_cloudinit_config.config_bsv.rendered
 }
 
-data "template_cloudinit_config" "config" {
+data "template_cloudinit_config" "config_btc" {
   gzip          = true
   base64_encode = true
 
@@ -208,6 +208,78 @@ EOF
   }
 }
 
+
+data "template_cloudinit_config" "config_bsv" {
+  gzip          = true
+  base64_encode = true
+
+  # Main cloud-config configuration file.
+  part {
+    content_type = "text/cloud-config"
+    content      = <<EOF
+#cloud-config
+write_files:
+  - owner: azureuser:azureuser
+    path: /home/azureuser/bitcoin-sv-1.1.0/bitcoin.conf
+    defer: true
+    content: |
+        server=1
+        rest=1
+        listen=1
+        regtest=1
+        printtoconsole=1
+        rpcport=18332
+        rpcuser=bitcoin
+        rpcpassword=bitcoin
+        rpcallowip=0.0.0.0/0
+        port=18333
+        blockmaxsize=512000000
+        excessiveblocksize=2000000000
+        maxstackmemoryusageconsensus=200000000
+        dbcache=16384
+        maxsigcachesize=260
+        maxscriptcachesize=260
+        maxorphantx=100000
+        maxmempool=2000
+        blockreconstructionextratxn=100000
+        banscore=10000
+        zmqpubhashblock=tcp://*:28332
+        zmqpubhashtx=tcp://*:28332
+        genesisactivationheight=1
+        minminingtxfee=0.0000005
+
+        connect=10.0.1.5
+        connect=10.0.1.6
+        connect=10.0.1.7
+        connect=10.0.1.8
+        connect=10.0.1.9
+  - owner: azureuser:azureuser
+    path: /etc/systemd/system/bitcoin.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Bitcoin Service
+      After=network.target
+
+      [Service]
+      ExecStart=/home/azureuser/bitcoin-sv-1.1.0/bin/bitcoind -conf=/home/azureuser/bitcoin-sv-1.1.0/bitcoin.conf
+      Restart=always
+      User=root
+
+      [Install]
+      WantedBy=multi-user.target
+runcmd:
+  - echo "Running custom startup commands"
+  - apt-get update
+  - apt-get install -y wget
+  - wget -P /home/azureuser https://download.bitcoinsv.io/bitcoinsv/1.1.0/bitcoin-sv-1.1.0-x86_64-linux-gnu.tar.gz
+  - cd /home/azureuser
+  - tar xzf bitcoin-sv-1.1.0-x86_64-linux-gnu.tar.gz
+  - systemctl enable bitcoin
+  - systemctl start bitcoin
+EOF
+  }
+}
 
 resource "azurerm_managed_disk" "test" {
   count                = 2
