@@ -14,7 +14,7 @@ import (
 )
 
 type RPCClient interface {
-	PrepareUtxos(utxoChannel chan TxOut) error
+	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) error
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 	GenerateBlock() (blockID string, err error)
 }
@@ -55,8 +55,8 @@ func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 	return b, nil
 }
 
-func (b *Broadcaster) PrepareUtxos() error {
-	err := b.client.PrepareUtxos(b.utxoChannel)
+func (b *Broadcaster) PrepareUtxos(targetUtxos int) error {
+	err := b.client.PrepareUtxos(b.utxoChannel, targetUtxos)
 	if err != nil {
 		return fmt.Errorf("failed to prepare utxos: %v", err)
 	}

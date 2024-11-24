@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"node-analysis/broadcaster"
+	keyset "node-analysis/key_set"
 	"os"
 	"time"
 
@@ -22,7 +22,7 @@ import (
 const (
 	coinBaseVout = 0
 	satPerBtc    = 1e8
-	targetUtxos  = 150
+	outputsPerTx = 50
 )
 
 var _ broadcaster.RPCClient = &Client{}
@@ -34,7 +34,7 @@ var (
 type Client struct {
 	client     *bitcoin.Bitcoind
 	logger     *slog.Logger
-	privateKey string
+	privateKey *ec.PrivateKey
 	address    string
 }
 
@@ -44,7 +44,24 @@ func New(client *bitcoin.Bitcoind) (*Client, error) {
 		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	}
 
+	err := p.setAddress()
+	if err != nil {
+		return nil, err
+	}
+
 	return p, nil
+}
+
+func (p *Client) setAddress() error {
+	ks, err := keyset.NewFromExtendedKeyStr("xprv9s21ZrQH143K2yZtKVRuSXDr1hXNWPciLsRi7SFB5JzY9Z4tAMWUpWdRWhpcqB5ESyGagKQbcejAcj5eQHD8Dej1uYrHYbmma5VEtnTAtg4", "0/0")
+	if err != nil {
+		return err
+	}
+	p.address = ks.Address(false)
+
+	p.privateKey = ks.PrivateKey
+
+	return nil
 }
 
 func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut, error) {
@@ -100,7 +117,7 @@ func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash
 		return nil, 0, fmt.Errorf("failed to add payment output to tx: %v", err)
 	}
 
-	err = signAllInputs(tx, p.privateKey)
+	err = signAllInputs(tx, p.privateKey.Wif())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to sign inputs: %v", err)
 	}
@@ -145,7 +162,7 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
+func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) error {
 	info, err := p.client.GetInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
@@ -179,31 +196,31 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
 		}
 	}
 
-	address, privKey, err := getNewWalletAddress(p.client)
+	fundingTxID, err := p.client.SendToAddress(p.address, 20)
 	if err != nil {
-		return fmt.Errorf("failed to get new wallet address: %v", err)
+		return fmt.Errorf("failed to send to address address: %v", err)
+	}
+	rawTx, err := p.client.GetRawTransaction(fundingTxID)
+	if err != nil {
+		return fmt.Errorf("failed to get raw tx: %v", err)
 	}
 
-	p.address = address
-	p.privateKey = privKey
+	utxo, err := sdkTx.NewUTXO(rawTx.TxID, 1, rawTx.Vout[1].ScriptPubKey.Hex, uint64(rawTx.Vout[1].Value*satPerBtc))
+	if err != nil {
+		return fmt.Errorf("failed creating UTXO: %v", err)
+	}
 
 	for len(utxoChannel) < targetUtxos {
-		_, err = p.client.SendToAddress(address, 0.001)
-		if err != nil {
-			return fmt.Errorf("failed to send to address address: %v", err)
-		}
-
-		utxos, err := getUtxos(p.client, address)
-		if err != nil {
-			return fmt.Errorf("failed to get utxos: %v", err)
-		}
-
-		tx, err := splitToAddress(privKey, address, utxos, 60)
+		var tx *sdkTx.Transaction
+		tx, err = p.splitToAddress(utxo, outputsPerTx)
 		if err != nil {
 			return fmt.Errorf("failed to split utxo to address: %v", err)
 		}
 
-		sentTxHash, err := p.client.SendRawTransaction(tx.Hex())
+		fmt.Println(tx.Hex())
+
+		var sentTxHash string
+		sentTxHash, err = p.client.SendRawTransaction(tx.Hex())
 		if err != nil {
 			return fmt.Errorf("failed to send raw transaction: %v", err)
 		}
@@ -211,6 +228,14 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
 		p.logger.Info("sent raw tx", "hash", sentTxHash, "outputs", len(tx.Outputs))
 
 		for i, output := range tx.Outputs {
+			if i == len(tx.Outputs)-1 {
+				utxo, err = sdkTx.NewUTXO(tx.TxID().String(), uint32(i), output.LockingScriptHex(), output.Satoshis)
+				if err != nil {
+					return fmt.Errorf("failed to create UTXO: %v", err)
+				}
+				break
+			}
+
 			hash, err := chainhash.NewHashFromStr(sentTxHash)
 			if err != nil {
 				return fmt.Errorf("failed to create tx hash: %v", err)
@@ -260,12 +285,10 @@ func getUtxos(bitcoind *bitcoin.Bitcoind, address string) ([]UnspentOutput, erro
 
 	for index, utxo := range data {
 		result[index] = UnspentOutput{
-			Txid:          utxo.TXID,
-			Vout:          utxo.Vout,
-			Address:       utxo.Address,
-			ScriptPubKey:  utxo.ScriptPubKey,
-			Amount:        utxo.Amount,
-			Confirmations: int(utxo.Confirmations),
+			Txid:         utxo.TXID,
+			Vout:         utxo.Vout,
+			ScriptPubKey: utxo.ScriptPubKey,
+			Amount:       utxo.Amount,
 		}
 	}
 
@@ -273,55 +296,31 @@ func getUtxos(bitcoind *bitcoin.Bitcoind, address string) ([]UnspentOutput, erro
 }
 
 type UnspentOutput struct {
-	Txid          string  `json:"txid"`
-	Vout          uint32  `json:"vout"`
-	Address       string  `json:"address"`
-	Account       string  `json:"account"`
-	ScriptPubKey  string  `json:"scriptPubKey"`
-	Amount        float64 `json:"amount"`
-	Confirmations int     `json:"confirmations"`
-	Spendable     bool    `json:"spendable"`
-	Solvable      bool    `json:"solvable"`
-	Safe          bool    `json:"safe"`
+	Txid         string  `json:"txid"`
+	Vout         uint32  `json:"vout"`
+	ScriptPubKey string  `json:"scriptPubKey"`
+	Amount       float64 `json:"amount"`
 }
 
-func splitToAddress(privateKey string, address string, utxos []UnspentOutput, outputs int, fee ...uint64) (*sdkTx.Transaction, error) {
+func (p *Client) splitToAddress(utxo *sdkTx.UTXO, outputs int) (*sdkTx.Transaction, error) {
 	tx := sdkTx.NewTransaction()
 
-	// Add an input using the UTXOs
-	for _, utxo := range utxos {
-		utxoTxID := utxo.Txid
-		utxoVout := utxo.Vout
-		utxoSatoshis := uint64(utxo.Amount * 1e8) // Convert BTC to satoshis
-		utxoScript := utxo.ScriptPubKey
-
-		u, err := sdkTx.NewUTXO(utxoTxID, utxoVout, utxoScript, utxoSatoshis)
-		if err != nil {
-			return nil, fmt.Errorf("failed creating UTXO: %v", err)
-		}
-		err = tx.AddInputsFromUTXOs(u)
-		if err != nil {
-			return nil, fmt.Errorf("failed adding input: %v", err)
-		}
+	err := tx.AddInputsFromUTXOs(utxo)
+	if err != nil {
+		return nil, fmt.Errorf("failed adding input: %v", err)
 	}
 	// Add an output to the address you've previously created
-	recipientAddress := address
 
-	var feeValue uint64
-	if len(fee) > 0 {
-		feeValue = fee[0]
-	} else {
-		feeValue = 20 // Set your default fee value here
-	}
+	const feeValue = 20 // Set your default fee value here
+	const satPerOutput = 1000
 
 	totalSat, err := tx.TotalInputSatoshis()
 	if err != nil {
 		return nil, fmt.Errorf("failed go get total input satoshis: %v", err)
 	}
 	remainingSat := totalSat
-	satPerOutput := uint64(math.Floor(float64(totalSat) / float64(outputs+1)))
 	for range outputs {
-		err = tx.PayToAddress(recipientAddress, satPerOutput)
+		err = tx.PayToAddress(p.address, satPerOutput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to pay to address: %v", err)
 		}
@@ -329,13 +328,13 @@ func splitToAddress(privateKey string, address string, utxos []UnspentOutput, ou
 		remainingSat -= satPerOutput
 	}
 
-	err = tx.PayToAddress(recipientAddress, satPerOutput-feeValue)
+	err = tx.PayToAddress(p.address, remainingSat-feeValue)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add payment output: %v", err)
 	}
 
 	// Sign the input
-	wif, err := bsvutil.DecodeWIF(privateKey)
+	wif, err := bsvutil.DecodeWIF(p.privateKey.Wif())
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode WIF: %v", err)
 	}

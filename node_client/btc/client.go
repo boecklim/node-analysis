@@ -22,7 +22,6 @@ const (
 	coinBaseVout               = 0
 	satPerBtc                  = 1e8
 	coinbaseSpendableAfterConf = 100
-	targetUtxos                = 150
 	outputsPerTx               = 20 // must be lower than 25 otherwise err="-26: too-long-mempool-chain, too many descendants for tx ..."
 	fee                        = 3000
 )
@@ -162,7 +161,7 @@ func (p *Client) setAddress() error {
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut) error {
+func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) error {
 	blocks, err := p.getBlocks()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)

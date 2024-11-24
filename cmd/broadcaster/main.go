@@ -138,7 +138,7 @@ func run() error {
 		return err
 	}
 
-	err = p.PrepareUtxos()
+	err = p.PrepareUtxos(1000)
 	if err != nil {
 		return err
 	}
