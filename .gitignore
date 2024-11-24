@@ -1,5 +1,5 @@
 /btc
-bitcoin.conf
+/local
 /build
 /*/.terraform
 .env
@@ -8,3 +8,4 @@ bitcoin.conf
 *.tfstate*
 infra/private_keys/
 blocking_output.log
+/.idea

@@ -32,7 +32,7 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/broadcaster/main.go",
             "args": [
-                "-port=18332",
+                "-port=18443",
                 "-blockchain=btc"
             ]
         }
