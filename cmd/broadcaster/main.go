@@ -58,7 +58,12 @@ func run() error {
 
 	limit := flag.Int64("limit", 20, "limit of txs at which to stop broadcastiong")
 	if limit == nil {
-		return errors.New("limit host not given")
+		return errors.New("limit not given")
+	}
+
+	generateBlocks := flag.Int64("gen-blocks", 0, "interval of seconds in which to generate a new block - for value 0 no blocks are going to be generated")
+	if generateBlocks == nil {
+		return errors.New("generate block interval not given")
 	}
 
 	flag.Parse()
@@ -144,7 +149,7 @@ func run() error {
 
 	go func() {
 		// Start the broadcasting process
-		err = p.Start(*txsRate, *limit)
+		err = p.Start(*txsRate, *limit, *generateBlocks)
 		logger.Info("Starting broadcaster")
 		doneChan <- err // Send the completion or error signal
 	}()
@@ -153,7 +158,7 @@ func run() error {
 	case <-signalChan:
 		// If an interrupt signal is received
 		logger.Info("Shutdown signal received. Shutting down the rate broadcaster.")
-	case err := <-doneChan:
+	case err = <-doneChan:
 		if err != nil {
 			logger.Error("Error during broadcasting", slog.String("err", err.Error()))
 		}

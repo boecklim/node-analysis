@@ -16,6 +16,7 @@ import (
 type RPCClient interface {
 	PrepareUtxos(utxoChannel chan TxOut) error
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
+	GenerateBlock() (blockID string, err error)
 }
 
 type Broadcaster struct {
@@ -24,13 +25,14 @@ type Broadcaster struct {
 	logger           *slog.Logger
 	utxoChannel      chan TxOut
 
-	cancelAll context.CancelFunc
-	ctx       context.Context
-	shutdown  chan struct{}
-	wg        sync.WaitGroup
-	totalTxs  int64
-	limit     int64
-	txChannel chan *wire.MsgTx
+	cancelAll                context.CancelFunc
+	ctx                      context.Context
+	shutdown                 chan struct{}
+	wg                       sync.WaitGroup
+	totalTxs                 int64
+	limit                    int64
+	txChannel                chan *wire.MsgTx
+	genBlocksIntervalSeconds int64
 }
 
 const (
@@ -62,8 +64,10 @@ func (b *Broadcaster) PrepareUtxos() error {
 	return nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksIntervalSeconds int64) (err error) {
 	b.limit = limit
+	b.genBlocksIntervalSeconds = genBlocksIntervalSeconds
+
 	b.wg.Add(1)
 	go func() {
 		defer b.wg.Done()
@@ -82,7 +86,37 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
 
+	if b.genBlocksIntervalSeconds > 0 {
+		genBlocksTicker := time.NewTicker(time.Duration(b.genBlocksIntervalSeconds) * time.Second)
+		var blockID string
+		b.wg.Add(1)
+		go func() {
+			defer func() {
+				b.logger.Info("stopping broadcasting")
+				b.wg.Done()
+			}()
+
+			for {
+				select {
+				case <-genBlocksTicker.C:
+
+					blockID, err = b.client.GenerateBlock()
+					if err != nil {
+						b.logger.Error("failed to generate block", "err", err)
+						continue
+					}
+
+					b.logger.Info("generated new block", "ID", blockID)
+				case <-b.ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	errCh := make(chan error, 100)
+	var satoshis int64
+	var hash *chainhash.Hash
 
 	b.wg.Add(1)
 	go func() {
@@ -104,7 +138,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 
 				txOut := <-b.utxoChannel
 
-				hash, satoshis, err := b.client.SubmitSelfPayingSingleOutputTx(txOut)
+				hash, satoshis, err = b.client.SubmitSelfPayingSingleOutputTx(txOut)
 				if err != nil {
 					if errors.Is(err, context.Canceled) {
 						return
@@ -124,13 +158,12 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) error {
 				}
 
 				b.logger.Debug("submitting tx successful", "hash", hash.String())
-				newUtxo := TxOut{
+				b.utxoChannel <- TxOut{
 					Hash:            hash,
 					ScriptPubKeyHex: b.addressScriptHex,
 					ValueSat:        satoshis,
 					VOut:            0,
 				}
-				b.utxoChannel <- newUtxo
 
 				atomic.AddInt64(&b.totalTxs, 1)
 

@@ -360,3 +360,12 @@ func splitToAddress(privateKey string, address string, utxos []UnspentOutput, ou
 
 	return tx, nil
 }
+
+func (p *Client) GenerateBlock() (blockID string, err error) {
+	blockHash, err := p.client.Generate(1)
+	if err != nil {
+		return blockID, err
+	}
+
+	return blockHash[0], nil
+}
