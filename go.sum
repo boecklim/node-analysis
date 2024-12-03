@@ -1,8 +1,6 @@
 bitbucket.org/simon_ordish/cryptolib v1.0.48 h1:bz3DsRCQK1tPQ59d1KwqDCkS0wW2PU6VoLlgTK/jKZM=
 bitbucket.org/simon_ordish/cryptolib v1.0.48/go.mod h1:Zt5cEbIFQyX6LxtDy7rZ5Bo2irVWJPZ1gQXWCsc66ZE=
 github.com/aead/siphash v1.0.1/go.mod h1:Nywa3cDsYNNK3gaciGTWPwHt0wlpNV15vwmswBAUSII=
-github.com/bitcoin-sv/arc v1.3.8 h1:xm/eTHt84Wz5g+eRRgxgjFF0jeMoFf4XH8k4zK18AEI=
-github.com/bitcoin-sv/arc v1.3.8/go.mod h1:SWj8n3MM8U1MRLFsjaLAlORtBpwmjCEqBC+eGPeuO/A=
 github.com/bitcoin-sv/go-sdk v1.1.14 h1:65PrWc8H5in138fplswpxpXuV3HwQQgyXDBegioyVbY=
 github.com/bitcoin-sv/go-sdk v1.1.14/go.mod h1:khREs6RkJuYkxFD3ZB9I+zcGjfxoHeACg9Zr3f7Fn7s=
 github.com/bitcoinsv/bsvd v0.0.0-20190609155523-4c29707f7173 h1:2yTIV9u7H0BhRDGXH5xrAwAz7XibWJtX2dNezMeNsUo=
@@ -27,8 +25,6 @@ github.com/btcsuite/go-socks v0.0.0-20170105172521-4720035b7bfd/go.mod h1:HHNXQz
 github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792 h1:R8vQdOQdZ9Y3SkEwmHoWBmX1DNXhXZqlTpq6s4tyJGc=
 github.com/btcsuite/websocket v0.0.0-20150119174127-31079b680792/go.mod h1:ghJtEyQwv5/p4Mg4C0fgbePVuGr935/5ddU9Z3TmDRY=
 github.com/btcsuite/winsvc v1.0.0/go.mod h1:jsenWakMcC0zFBFurPLEAyrnc/teJEM1O46fmI40EZs=
-github.com/cenkalti/backoff/v4 v4.3.0 h1:MyRJ/UdXutAwSAT+s3wNd7MfTIcy71VQueUuFK343L8=
-github.com/cenkalti/backoff/v4 v4.3.0/go.mod h1:Y3VNntkOUPxTVeUxJ/G5vcM//AlwfmyYozVcomhLiZE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

@@ -12,6 +12,7 @@ import (
 	"node-analysis/node_client/btc"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/ordishs/go-bitcoin"
@@ -66,7 +67,19 @@ func run() error {
 		return errors.New("generate block interval not given")
 	}
 
+	startAt := flag.String("start-at", "2024-10-01T00:00:00+01:00", "time at which to start - format RFC3339: e.g. 2024-12-02T21:16:00+01:00")
+	if startAt == nil {
+		return errors.New("startAt not given")
+	}
+
 	flag.Parse()
+
+	waitUntil, err := time.Parse(time.RFC3339, *startAt)
+	if err != nil {
+		return err
+	}
+
+	startTimer := time.NewTimer(time.Until(waitUntil))
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -138,10 +151,15 @@ func run() error {
 		return err
 	}
 
+	logger.Info("Preparing utxos")
+
 	err = p.PrepareUtxos(1000)
 	if err != nil {
 		return err
 	}
+
+	logger.Info("Waiting until to start broadcasting", "time", waitUntil.String())
+	<-startTimer.C
 
 	doneChan := make(chan error) // Channel to signal the completion of Start
 	signalChan := make(chan os.Signal, 1)
