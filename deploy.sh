@@ -50,9 +50,6 @@ readarray -t VM_RESOURCE_IDS < <(terraform -chdir=infra output -json vm_resource
 #  - scp binaries
 #  - upload & unpack bitcoin node
 #  - upload bitcoin.conf to ~/.bitcoin folder
-#  - start bitcoin node
-#  - start listener
-#  - start broadcaster
 
 nrOfIDs=${#VM_RESOURCE_IDS[@]}
 

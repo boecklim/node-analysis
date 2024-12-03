@@ -14,10 +14,48 @@ Create the infrastructure
 1. Initiate terraform `terraform -chdir=infra init`
 2. Create infrastructure
     - for BSV: `terraform -chdir=infra apply -var use_btc=false`
-    - for BTC: `terraform -chdir=infra apply -var use_btc=true`
+    - for BTC: `terraform -chdir=infra apply -var use_btc=true` (use_btc=true is default)
+By default a network with 2 VMs is created. In order to have a different number of VMs for example 3, create the infrastructure with an additional variable
+    - `terraform -chdir=infra apply -var virtual_machines=3`
+With the given infrastructure code, the maximum number of VMs is 5
+
+Possibly the quota for `Standard Av2 Family vCPUs` and `Total Regional vCPUs` needs to be increased: https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/~/myQuotas
 
 ## Build and deploy node analysis application
+
+To make the pem file executable `make executable`
 
 To build the application run `make build`
 
 Deploy the application by running `deploy.sh`
+
+## Connect to instances
+
+Show vm resource ids
+```bash
+terraform -chdir=infra output -json vm_resource_ids | jq '.[].[]'
+```
+
+Show the resource group
+
+```bash
+terraform -chdir=infra output -json resource_group_name
+```
+
+To connect to a particular VM use the following command while replacing `<vm resource id>` and `<resource group name>` with the output from the respective previous commands
+
+```bash
+az network bastion ssh --name bastion_host --resource-group <resource group name> --target-resource-id <vm resource id> --auth-type "ssh-key" --username azureuser --ssh-key ./infra/private_keys/cloudtls.pem
+```
+
+
+## Run the node analysis application
+
+Start the listener 
+For BSV: `./listener -port=28332`
+For BTC: `./listener`
+
+
+Start broadcaster
+For BSV: `./broadcaster -port=18332 -blockchain=bsv -gen-blocks=5 -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00`
+For BTC: `./broadcaster -port=18443 -blockchain=btc -gen-blocks=5 -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00`
