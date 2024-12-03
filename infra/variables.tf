@@ -13,11 +13,17 @@ variable "resource_group_name_prefix" {
 variable "virtual_machines" {
   type = number
   description = "Number of virtual machines to be created"
-  default = 5
+  default = 2
 }
 
 variable "use_btc" {
   type = bool
   description = "Whether to use BTC or BSV blockchain - true: BTC | false: BSV"
   default = true
+}
+
+variable "vm_size" {
+  type = string
+  description = "Azure VM size"
+  default = "Standard_A8_v2" # other options: https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/general-purpose/av2-series?tabs=sizebasic
 }

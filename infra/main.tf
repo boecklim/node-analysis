@@ -55,7 +55,7 @@ resource "azurerm_public_ip" "my_terraform_public_ip" {
 
 # Create network interface
 resource "azurerm_network_interface" "my_terraform_nic" {
-  count               = 2
+  count               = var.virtual_machines
   name                = "nic_${count.index}"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
@@ -102,7 +102,7 @@ resource "azurerm_network_security_group" "my_terraform_nsg" {
 
 # Connect the security group to the network interface
 resource "azurerm_network_interface_security_group_association" "example" {
-  count                     = 2
+  count                     = var.virtual_machines
   network_interface_id      = element(azurerm_network_interface.my_terraform_nic.*.id, count.index)
   network_security_group_id = azurerm_network_security_group.my_terraform_nsg.id
 }
@@ -119,12 +119,12 @@ resource "random_pet" "azurerm_linux_virtual_machine_name" {
 
 # Create virtual machine
 resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
-  count                           = 2
+  count                           = var.virtual_machines
   name                            = "${random_pet.azurerm_linux_virtual_machine_name.id}${count.index}"
   location                        = azurerm_resource_group.rg.location
   resource_group_name             = azurerm_resource_group.rg.name
   network_interface_ids           = [azurerm_network_interface.my_terraform_nic[count.index].id]
-  size                            = "Standard_B1s"
+  size                            = var.vm_size
   computer_name                   = "myvm${count.index}"
   admin_username                  = "azureuser"
   disable_password_authentication = true
@@ -136,14 +136,14 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
 
   os_disk {
     caching              = "ReadWrite"
-    storage_account_type = "Premium_LRS"
+    storage_account_type = "Standard_LRS"
     name                 = "myosdisk_${count.index}"
   }
 
-  source_image_reference {
+  source_image_reference { # alternative images: https://documentation.ubuntu.com/azure/en/latest/azure-how-to/instances/find-ubuntu-images/
     publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts-gen2"
+    offer     = "ubuntu-24_04-lts"
+    sku       = "server-gen1"
     version   = "latest"
   }
   
@@ -232,7 +232,7 @@ write_files:
         rpcuser=bitcoin
         rpcpassword=bitcoin
         rpcallowip=0.0.0.0/0
-        port=18333
+        port=18444
         blockmaxsize=512000000
         excessiveblocksize=2000000000
         maxstackmemoryusageconsensus=200000000
@@ -280,24 +280,24 @@ runcmd:
 EOF
   }
 }
-
-resource "azurerm_managed_disk" "test" {
-  count                = 2
-  name                 = "datadisk_existing_${count.index}"
-  location             = azurerm_resource_group.rg.location
-  resource_group_name  = azurerm_resource_group.rg.name
-  storage_account_type = "Premium_LRS"
-  create_option        = "Empty"
-  disk_size_gb         = "1024"
-}
-
-resource "azurerm_virtual_machine_data_disk_attachment" "test" {
-  count              = 2
-  managed_disk_id    = azurerm_managed_disk.test[count.index].id
-  virtual_machine_id = azurerm_linux_virtual_machine.my_terraform_vm[count.index].id
-  lun                = "10"
-  caching            = "ReadWrite"
-}
+#
+# resource "azurerm_managed_disk" "managed_disk" {
+#   count                = var.virtual_machines
+#   name                 = "datadisk_existing_${count.index}"
+#   location             = azurerm_resource_group.rg.location
+#   resource_group_name  = azurerm_resource_group.rg.name
+#   storage_account_type = "Standard_LRS"
+#   create_option        = "Empty"
+#   disk_size_gb         = "10"
+# }
+#
+# resource "azurerm_virtual_machine_data_disk_attachment" "managed_disk_attachment" {
+#   count              = var.virtual_machines
+#   managed_disk_id    = azurerm_managed_disk.managed_disk[count.index].id
+#   virtual_machine_id = azurerm_linux_virtual_machine.my_terraform_vm[count.index].id
+#   lun                = "10"
+#   caching            = "ReadWrite"
+# }
 
 resource "local_file" "cloud_pem" {
   filename = "${path.module}/private_keys/cloudtls.pem"
