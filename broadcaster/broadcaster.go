@@ -17,6 +17,7 @@ type RPCClient interface {
 	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) error
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 	GenerateBlock() (blockID string, err error)
+	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
 }
 
 type Broadcaster struct {

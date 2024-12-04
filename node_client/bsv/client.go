@@ -63,7 +63,15 @@ func (p *Client) setAddress() error {
 
 	return nil
 }
+func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
 
+	blockMsg, err := p.client.GetBlock(blockHash.String())
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return blockMsg.Size, blockMsg.NumTx, nil
+}
 func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {

@@ -161,6 +161,15 @@ func (p *Client) setAddress() error {
 	return nil
 }
 
+func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
+	blockMsg, err := p.client.GetBlock(blockHash)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return uint64(blockMsg.SerializeSize()), uint64(len(blockMsg.Transactions)), nil
+}
+
 func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) error {
 	blocks, err := p.getBlocks()
 	if err != nil {

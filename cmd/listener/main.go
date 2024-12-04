@@ -8,8 +8,16 @@ import (
 	"log"
 	"log/slog"
 	"net/url"
+	"node-analysis/broadcaster"
+	"node-analysis/node_client/bsv"
+	"node-analysis/node_client/btc"
 	"node-analysis/zmq"
 	"os"
+	"time"
+
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/ordishs/go-bitcoin"
 )
 
 func main() {
@@ -22,6 +30,10 @@ func main() {
 }
 
 const (
+	pubhashblock   = "hashblock"
+	pubhashtx      = "hashtx"
+	bsvBlockchain  = "bsv"
+	btcBlockchain  = "btc"
 	hostDefault    = "localhost"
 	zmqPortDefault = 29000
 	rpcUser        = "bitcoin"
@@ -31,7 +43,7 @@ const (
 )
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	zmqPort := flag.Int("port", zmqPortDefault, "port of listener client")
 	if zmqPort == nil {
@@ -52,6 +64,12 @@ func run() error {
 	if rpcHost == nil {
 		return errors.New("rpc host not given")
 	}
+
+	blockchain := flag.String("blockchain", "btc", "one of btc | bsv")
+	if blockchain == nil {
+		return errors.New("blockchain not given")
+	}
+
 	flag.Parse()
 
 	zmqURLString := fmt.Sprintf("zmq://%s:%d", *zmqHost, *zmqPort)
@@ -70,31 +88,69 @@ func run() error {
 	}
 
 	zmqClient := zmq.NewZMQClient(zmqURL, logger)
-
+	var client broadcaster.RPCClient
 	blockChan := make(chan zmq.BlockEvent, 5000)
 
-	// btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
-	// 	Host:         fmt.Sprintf("%s:%d", *rpcHost, *rpcPort),
-	// 	User:         rpcUser,
-	// 	Pass:         rpcPassword,
-	// 	HTTPPostMode: true,
-	// 	DisableTLS:   true,
-	// }, nil)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to create btc rpc client: %v", err)
-	// }
-	// info, err := btcClient.GetMiningInfo()
-	// if err != nil {
-	// 	return fmt.Errorf("failed to get info: %v", err)
-	// }
+	switch *blockchain {
+	case btcBlockchain:
+		btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
+			Host:         fmt.Sprintf("%s:%d", *rpcHost, *rpcPort),
+			User:         rpcUser,
+			Pass:         rpcPassword,
+			HTTPPostMode: true,
+			DisableTLS:   true,
+		}, nil)
+		if err != nil {
+			return fmt.Errorf("failed to create btc rpc client: %v", err)
+		}
+		info, err := btcClient.GetMiningInfo()
+		if err != nil {
+			return fmt.Errorf("failed to get info: %v", err)
+		}
 
-	// networkInfo, err := btcClient.GetNetworkInfo()
-	// if err != nil {
-	// 	return err
-	// }
+		networkInfo, err := btcClient.GetNetworkInfo()
+		if err != nil {
+			return err
+		}
 
-	// logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
-	// logger.Info("network info", "version", networkInfo.Version)
+		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+		logger.Info("network info", "version", networkInfo.Version)
+		client, err = btc.New(btcClient)
+		if err != nil {
+			return fmt.Errorf("failed to create rpc client: %v", err)
+		}
+	case bsvBlockchain:
+		rpcURL, err := url.Parse(fmt.Sprintf("rpc://%s:%s@%s:%d", rpcUser, rpcPassword, *rpcHost, *rpcPort))
+		if err != nil {
+			return fmt.Errorf("failed to parse node rpc url: %w", err)
+		}
+
+		bsvClient, err := bitcoin.NewFromURL(rpcURL, false)
+		if err != nil {
+			return fmt.Errorf("failed to create bitcoin client: %w", err)
+		}
+
+		info, err := bsvClient.GetMiningInfo()
+		if err != nil {
+			return fmt.Errorf("failed to get info: %v", err)
+		}
+
+		networkInfo, err := bsvClient.GetNetworkInfo()
+		if err != nil {
+			return err
+		}
+
+		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+		logger.Info("network info", "version", networkInfo.Version)
+
+		client, err = bsv.New(bsvClient)
+		if err != nil {
+			return err
+		}
+
+	default:
+		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
+	}
 
 	go func() {
 	loop:
@@ -103,27 +159,41 @@ func run() error {
 			case <-ctx.Done():
 				break loop
 			case blockEvent := <-blockChan:
-				// var blockHash *chainhash.Hash
-				// var err error
-				logger.Info("block received", "hash", blockEvent.Hash)
-				// blockHash, err = chainhash.NewHashFromStr(blockEvent.Hash)
-				// if err != nil {
-				// 	logger.Error("failed to create hash from hex string", "err", err)
-				// 	continue
-				// }
+				var blockHash *chainhash.Hash
+				var err error
+				logger.Debug("block received", "hash", blockEvent.Hash)
+				blockHash, err = chainhash.NewHashFromStr(blockEvent.Hash)
+				if err != nil {
+					logger.Error("failed to create hash from hex string", "err", err)
+					continue
+				}
 
-				// block, err := btcClient.GetBlock(blockHash)
-				// if err != nil {
-				// 	logger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
-				// 	continue
-				// }
+				sizeBytes, nrTxs, err := client.GetBlockSize(blockHash)
+				if err != nil {
+					logger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
+					continue
+				}
 
-				// logger.Info("block", "hash", blockEvent.Hash, "timestamp", blockEvent.Timestamp.String(), "txs", len(block.Transactions))
+				logger.Info("block", "hash", blockEvent.Hash, "timestamp", blockEvent.Timestamp.Format(time.RFC3339), "txs", nrTxs, "size", sizeBytes)
 			}
 		}
 	}()
 
-	err = zmqClient.Start(ctx, zmqSubscriber, blockChan)
+	ch := make(chan []string, 1000)
+
+	if err := zmqSubscriber.Subscribe(pubhashblock, ch); err != nil {
+		return err
+	}
+
+	if err := zmqSubscriber.Subscribe(pubhashtx, ch); err != nil {
+		return err
+	}
+
+	err = zmqSubscriber.Start(ctx)
+	if err != nil {
+		return err
+	}
+	err = zmqClient.Start(ctx, zmqSubscriber, blockChan, ch)
 	if err != nil {
 		return err
 	}

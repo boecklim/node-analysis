@@ -36,16 +36,7 @@ type BlockEvent struct {
 	Timestamp time.Time
 }
 
-func (z *Client) Start(ctx context.Context, zmqi ClientI, blockChan chan BlockEvent) error {
-	ch := make(chan []string)
-
-	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {
-		return err
-	}
-
-	if err := zmqi.Subscribe(pubhashtx, ch); err != nil {
-		return err
-	}
+func (z *Client) Start(ctx context.Context, zmqi ClientI, blockChan chan BlockEvent, ch chan []string) error {
 
 loop:
 	for {
