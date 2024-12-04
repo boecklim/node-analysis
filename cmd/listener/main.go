@@ -24,6 +24,10 @@ func main() {
 const (
 	hostDefault    = "localhost"
 	zmqPortDefault = 29000
+	rpcUser        = "bitcoin"
+	rpcPassword    = "bitcoin"
+	rpcHostDefault = "localhost"
+	rpcPortDefault = 18443
 )
 
 func run() error {
@@ -39,6 +43,15 @@ func run() error {
 		return errors.New("rpc host not given")
 	}
 
+	rpcPort := flag.Int("rpc-port", rpcPortDefault, "port of RPC client")
+	if rpcPort == nil {
+		return errors.New("rpc port not given")
+	}
+
+	rpcHost := flag.String("rpc-host", rpcHostDefault, "host of RPC client")
+	if rpcHost == nil {
+		return errors.New("rpc host not given")
+	}
 	flag.Parse()
 
 	zmqURLString := fmt.Sprintf("zmq://%s:%d", *zmqHost, *zmqPort)
@@ -58,7 +71,59 @@ func run() error {
 
 	zmqClient := zmq.NewZMQClient(zmqURL, logger)
 
-	err = zmqClient.Start(ctx, zmqSubscriber)
+	blockChan := make(chan zmq.BlockEvent, 5000)
+
+	// btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
+	// 	Host:         fmt.Sprintf("%s:%d", *rpcHost, *rpcPort),
+	// 	User:         rpcUser,
+	// 	Pass:         rpcPassword,
+	// 	HTTPPostMode: true,
+	// 	DisableTLS:   true,
+	// }, nil)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to create btc rpc client: %v", err)
+	// }
+	// info, err := btcClient.GetMiningInfo()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get info: %v", err)
+	// }
+
+	// networkInfo, err := btcClient.GetNetworkInfo()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+	// logger.Info("network info", "version", networkInfo.Version)
+
+	go func() {
+	loop:
+		for {
+			select {
+			case <-ctx.Done():
+				break loop
+			case blockEvent := <-blockChan:
+				// var blockHash *chainhash.Hash
+				// var err error
+				logger.Info("block received", "hash", blockEvent.Hash)
+				// blockHash, err = chainhash.NewHashFromStr(blockEvent.Hash)
+				// if err != nil {
+				// 	logger.Error("failed to create hash from hex string", "err", err)
+				// 	continue
+				// }
+
+				// block, err := btcClient.GetBlock(blockHash)
+				// if err != nil {
+				// 	logger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
+				// 	continue
+				// }
+
+				// logger.Info("block", "hash", blockEvent.Hash, "timestamp", blockEvent.Timestamp.String(), "txs", len(block.Transactions))
+			}
+		}
+	}()
+
+	err = zmqClient.Start(ctx, zmqSubscriber, blockChan)
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const (
@@ -30,7 +31,12 @@ type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (z *Client) Start(ctx context.Context, zmqi ClientI) error {
+type BlockEvent struct {
+	Hash      string
+	Timestamp time.Time
+}
+
+func (z *Client) Start(ctx context.Context, zmqi ClientI, blockChan chan BlockEvent) error {
 	ch := make(chan []string)
 
 	if err := zmqi.Subscribe(pubhashblock, ch); err != nil {
@@ -50,9 +56,13 @@ loop:
 		case c := <-ch:
 			switch c[0] {
 			case pubhashblock:
-				z.logger.Debug("ZMQ", "topic", pubhashblock, "hash", c[1])
+				blockChan <- BlockEvent{
+					Hash:      c[1],
+					Timestamp: time.Now(),
+				}
+				// z.logger.Debug("ZMQ", "topic", pubhashblock, "hash", c[1])
 			case pubhashtx:
-				z.logger.Debug("ZMQ", "topic", pubhashtx, "hash", c[1])
+				// z.logger.Debug("ZMQ", "topic", pubhashtx, "hash", c[1])
 			default:
 				z.logger.Info("Unhandled ZMQ message", "msg", strings.Join(c, ","))
 			}
