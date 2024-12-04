@@ -1,32 +1,6 @@
 #!/bin/bash
 
-usage() {
-    echo "Usage: $0 [--help] [--build]"
-    echo "  --help   Show help"
-    echo "  --build  Build the app"
-    exit 1
-}
-
-for arg in "$@"; do
-    case "$arg" in
-        --help)
-            usage
-            ;;
-        --build)
-            # Build listener
-            go build -o build/listener cmd/listener/main.go
-
-            # Build broadcaster
-            go build -o build/broadcaster cmd/broadcaster/main.go
-            exit 0
-            ;;
-        *)
-            echo "Invalid option: $arg" >&2
-            usage
-            ;;
-    esac
-done
-
+FILENAME=$1
 
 # Get bastion host name, resource group, VM resource IDs
 
@@ -69,7 +43,7 @@ do
 
     echo "Creating tunnel"
     # Create tunnel
-    az network bastion tunnel --name $BASTION_HOST_NAME --resource-group $RESOURCE_GROUP_NAME --target-resource-id ${VM_RESOURCE_ID} --resource-port 22 --port $upload_port >blocking_output.log 2>&1 &
+    az network bastion tunnel --name $BASTION_HOST_NAME --resource-group $RESOURCE_GROUP_NAME --target-resource-id ${VM_RESOURCE_ID} --resource-port 22 --port $upload_port >blocking_output.log 2>&1 & # 
     BLOCKING_PID=$!  # 
 
     echo "Waiting for the blocking command to start..."
@@ -78,7 +52,7 @@ do
     done
 
     ssh-keygen -f ~/.ssh/known_hosts -R "[127.0.0.1]:${upload_port}"
-    scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port azureuser@127.0.0.1:/home/azureuser/output.txt ./output_${id}.txt
+    scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port azureuser@127.0.0.1:/home/azureuser/${FILENAME} ./${FILENAME}_${id}.txt
 
     echo "Stopping the blocking command (PID: $BLOCKING_PID)..."
     kill $BLOCKING_PID
@@ -86,6 +60,8 @@ do
     wait $BLOCKING_PID 2>/dev/null
 
 done
+
+# pkill -P $$ # kill all subprocesses
 
 echo "All tasks completed!"
 

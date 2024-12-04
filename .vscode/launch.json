@@ -15,6 +15,16 @@
             ]
         },
         {
+            "name": "run listener btc",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/cmd/listener/main.go",
+            "args": [
+                "-port=29000"
+            ]
+        },
+        {
             "name": "run broadcaster bsv",
             "type": "go",
             "request": "launch",
@@ -33,7 +43,10 @@
             "program": "${workspaceFolder}/cmd/broadcaster/main.go",
             "args": [
                 "-port=18443",
-                "-blockchain=btc"
+                "-blockchain=btc",
+                "-gen-blocks=15s",
+                "-rate=1",
+                "-limit=30",
                 // "-start-at=2024-12-02T21:16:00+01:00"
                      //   "2006-01-02T15:04:05Z07:00"
             ]

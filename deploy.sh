@@ -56,7 +56,6 @@ nrOfIDs=${#VM_RESOURCE_IDS[@]}
 
 upload_port=9000
 
-
 for id in  $(seq 1 $nrOfIDs)
 do
     VM_RESOURCE_ID=${VM_RESOURCE_IDS[$id -1]}
@@ -88,6 +87,8 @@ do
     wait $BLOCKING_PID 2>/dev/null
 
 done
+
+# pkill -P $$ # kill all subprocesses
 
 echo "All tasks completed!"
 

@@ -27,6 +27,8 @@ To make the pem file executable `make executable`
 
 To build the application run `make build`
 
+Change mode of pem file `chmod 400 ./infra/private_keys/cloudtls.pem`
+
 Deploy the application by running `deploy.sh`
 
 ## Connect to instances
@@ -51,9 +53,9 @@ az network bastion ssh --name bastion_host --resource-group <resource group name
 
 ## Run the node analysis application
 
-Start the listener 
-For BSV: `./listener -port=28332`
-For BTC: `./listener`
+Start the listener and store logs to file
+For BSV: `./listener -port=28332 > output.txt`
+For BTC: `./listener > output.txt`
 
 
 Start broadcaster
