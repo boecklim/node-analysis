@@ -25,14 +25,13 @@ type Broadcaster struct {
 	logger           *slog.Logger
 	utxoChannel      chan TxOut
 
-	cancelAll                context.CancelFunc
-	ctx                      context.Context
-	shutdown                 chan struct{}
-	wg                       sync.WaitGroup
-	totalTxs                 int64
-	limit                    int64
-	txChannel                chan *wire.MsgTx
-	genBlocksIntervalSeconds int64
+	cancelAll context.CancelFunc
+	ctx       context.Context
+	shutdown  chan struct{}
+	wg        sync.WaitGroup
+	totalTxs  int64
+	limit     int64
+	txChannel chan *wire.MsgTx
 }
 
 const (
@@ -64,9 +63,8 @@ func (b *Broadcaster) PrepareUtxos(targetUtxos int) error {
 	return nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksIntervalSeconds int64) (err error) {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterval *time.Duration) (err error) {
 	b.limit = limit
-	b.genBlocksIntervalSeconds = genBlocksIntervalSeconds
 
 	b.wg.Add(1)
 	go func() {
@@ -86,8 +84,8 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
 
-	if b.genBlocksIntervalSeconds > 0 {
-		genBlocksTicker := time.NewTicker(time.Duration(b.genBlocksIntervalSeconds) * time.Second)
+	if genBlocksInterval != nil {
+		genBlocksTicker := time.NewTicker(*genBlocksInterval)
 		var blockID string
 		b.wg.Add(1)
 		go func() {
@@ -106,7 +104,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 						continue
 					}
 
-					b.logger.Info("generated new block", "ID", blockID)
+					b.logger.Info("block generated", "ID", blockID)
 				case <-b.ctx.Done():
 					return
 				}
@@ -157,7 +155,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 					continue
 				}
 
-				b.logger.Debug("submitting tx successful", "hash", hash.String())
+				b.logger.Info("submitting tx successful", "hash", hash.String())
 				b.utxoChannel <- TxOut{
 					Hash:            hash,
 					ScriptPubKeyHex: b.addressScriptHex,

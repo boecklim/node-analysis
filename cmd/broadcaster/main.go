@@ -62,7 +62,7 @@ func run() error {
 		return errors.New("limit not given")
 	}
 
-	generateBlocks := flag.Int64("gen-blocks", 0, "interval of seconds in which to generate a new block - for value 0 no blocks are going to be generated")
+	generateBlocks := flag.Duration("gen-blocks", 0, "time interval in which to generate a new block - for value 0 no blocks are going to be generated. Valid time units are s, m, h")
 	if generateBlocks == nil {
 		return errors.New("generate block interval not given")
 	}
@@ -74,6 +74,10 @@ func run() error {
 
 	flag.Parse()
 
+	if *generateBlocks == 0 {
+		generateBlocks = nil
+	}
+
 	waitUntil, err := time.Parse(time.RFC3339, *startAt)
 	if err != nil {
 		return err
@@ -81,7 +85,7 @@ func run() error {
 
 	startTimer := time.NewTimer(time.Until(waitUntil))
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	var client broadcaster.RPCClient
 
@@ -167,7 +171,7 @@ func run() error {
 
 	go func() {
 		// Start the broadcasting process
-		err = p.Start(*txsRate, *limit, *generateBlocks)
+		err = p.Start(*txsRate, *limit, generateBlocks)
 		logger.Info("Starting broadcaster")
 		doneChan <- err // Send the completion or error signal
 	}()
