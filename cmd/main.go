@@ -15,6 +15,7 @@ import (
 	"node-analysis/zmq"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
@@ -66,9 +67,9 @@ func run() error {
 		return errors.New("rpc host not given")
 	}
 
-	outputFile := flag.String("output", "output.log", "filename where to store output")
-	if outputFile == nil {
-		return errors.New("outputFile not given")
+	outputPath := flag.String("output", "output.log", "path to output file of listener e.g. ./results/output.log")
+	if outputPath == nil {
+		return errors.New("output not given")
 	}
 
 	txsRate := flag.Int64("rate", 5, "rate in txs per second")
@@ -76,7 +77,7 @@ func run() error {
 		return errors.New("rate not given")
 	}
 
-	limit := flag.Int64("limit", 20, "limit of txs at which to stop broadcastiong")
+	limit := flag.Int64("limit", 20, "limit of txs at which to stop broadcasting")
 	if limit == nil {
 		return errors.New("limit not given")
 	}
@@ -169,7 +170,13 @@ func run() error {
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
 	}
 
-	logFile, err := os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	path := filepath.Dir(*outputPath)
+	err = os.MkdirAll(path, os.ModePerm)
+	if err != nil {
+		return fmt.Errorf("failed to create path: %v", err)
+	}
+
+	logFile, err := os.OpenFile(*outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open file: %v", err)
 	}
