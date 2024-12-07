@@ -341,6 +341,7 @@ issues:
   max-same-issues: 50
   exclude-dirs:
     - node_client/btc/rpcclient
+    - node_client/btc/btcjson
   exclude:
     - "don't use an underscore in package name" # exclude check from revive linter
 
