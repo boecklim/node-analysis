@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/lmittmann/tint"
 	"github.com/ordishs/go-bitcoin"
+	"node-analysis/node_client/btc/rpcclient"
 )
 
 func main() {

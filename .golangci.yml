@@ -339,7 +339,8 @@ issues:
   # Set to 0 to disable.
   # Default: 3
   max-same-issues: 50
-
+  exclude-dirs:
+    - node_client/btc/rpcclient
   exclude:
     - "don't use an underscore in package name" # exclude check from revive linter
 
