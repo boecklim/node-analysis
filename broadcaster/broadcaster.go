@@ -156,7 +156,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 					continue
 				}
 
-				b.logger.Info("submitting tx successful", "hash", hash.String())
+				b.logger.Debug("submitting tx successful", "hash", hash.String())
 				b.utxoChannel <- TxOut{
 					Hash:            hash,
 					ScriptPubKeyHex: b.addressScriptHex,

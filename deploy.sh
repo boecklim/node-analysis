@@ -78,8 +78,6 @@ do
 
     ssh-keygen -f ~/.ssh/known_hosts -R "[127.0.0.1]:${upload_port}"
     scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port ./build/broadcaster azureuser@127.0.0.1:/home/azureuser/
-    scp -o StrictHostKeyChecking=no -i ./infra/private_keys/cloudtls.pem -P $upload_port ./build/listener azureuser@127.0.0.1:/home/azureuser/
-
 
     echo "Stopping the blocking command (PID: $BLOCKING_PID)..."
     kill $BLOCKING_PID

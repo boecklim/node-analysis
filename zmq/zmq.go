@@ -34,10 +34,10 @@ type ZMQ struct {
 func NewZMQ(host string, port int, logger *slog.Logger) (*ZMQ, error) {
 	ctx := context.Background()
 
-	return NewZMQWithContext(ctx, host, port, logger)
+	return New(ctx, host, port, logger)
 }
 
-func NewZMQWithContext(ctx context.Context, host string, port int, logger *slog.Logger) (*ZMQ, error) {
+func New(ctx context.Context, host string, port int, logger *slog.Logger) (*ZMQ, error) {
 	zmq := &ZMQ{
 		address:            fmt.Sprintf("tcp://%s:%d", host, port),
 		subscriptions:      make(map[string][]chan []string),

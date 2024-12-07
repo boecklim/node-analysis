@@ -53,23 +53,6 @@ az network bastion ssh --name bastion_host --resource-group <resource group name
 
 ## Run the node analysis application
 
-### Start the listener and store logs to file
-
-Run the following command to see the meaning of each flag
-```
-./listener -h
-```
-
-For BSV: 
-```
-./listener -port=28332 > output.txt
-```
-
-For BTC: 
-```
-./listener > output.txt
-```
-
 ### Start broadcaster
 
 Run the following command to see the meaning of each flag
@@ -77,12 +60,12 @@ Run the following command to see the meaning of each flag
 ./broadcaster -h
 ```
 
-
 For BSV: 
 ```
-./broadcaster -port=18332 -blockchain=bsv -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00 -gen-blocks=5s
+./broadcaster -rpc-port=18332 -zmq-port=28332 -blockchain=bsv -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00 -gen-blocks=5s
 ```
+
 For BTC: 
 ```
-./broadcaster -port=18443 -blockchain=btc -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00 -gen-blocks=5s
+./broadcaster -rpc-port=18443 -zmq-port=29000 -blockchain=btc -rate=10 -limit=200 -start-at=2024-12-02T21:16:00+01:00 -gen-blocks=5s
 ```

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,13 +9,16 @@ import (
 	"log/slog"
 	"net/url"
 	"node-analysis/broadcaster"
+	"node-analysis/listener"
 	"node-analysis/node_client/bsv"
 	"node-analysis/node_client/btc"
+	"node-analysis/zmq"
 	"os"
 	"os/signal"
 	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/lmittmann/tint"
 	"github.com/ordishs/go-bitcoin"
 )
 
@@ -34,6 +38,11 @@ const (
 	rpcPortDefault = 18443
 	bsvBlockchain  = "bsv"
 	btcBlockchain  = "btc"
+
+	pubhashblockTopic = "hashblock"
+	pubhashtxTopic    = "hashtx"
+	hostDefault       = "localhost"
+	zmqPortDefault    = 29000
 )
 
 func run() error {
@@ -42,14 +51,24 @@ func run() error {
 		return errors.New("blockchain not given")
 	}
 
-	rpcPort := flag.Int("port", rpcPortDefault, "port of RPC client")
+	zmqPort := flag.Int("zmq-port", zmqPortDefault, "zmq port")
+	if zmqPort == nil {
+		return errors.New("zmq port not given")
+	}
+
+	rpcPort := flag.Int("rpc-port", rpcPortDefault, "RPC port")
 	if rpcPort == nil {
 		return errors.New("rpc port not given")
 	}
 
-	rpcHost := flag.String("host", rpcHostDefault, "host of RPC client")
-	if rpcHost == nil {
+	host := flag.String("host", rpcHostDefault, "host")
+	if host == nil {
 		return errors.New("rpc host not given")
+	}
+
+	outputFile := flag.String("output", "output.log", "filename where to store output")
+	if outputFile == nil {
+		return errors.New("outputFile not given")
 	}
 
 	txsRate := flag.Int64("rate", 5, "rate in txs per second")
@@ -78,6 +97,8 @@ func run() error {
 		generateBlocks = nil
 	}
 
+	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
+
 	waitUntil, err := time.Parse(time.RFC3339, *startAt)
 	if err != nil {
 		return err
@@ -85,14 +106,12 @@ func run() error {
 
 	startTimer := time.NewTimer(time.Until(waitUntil))
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
 	var client broadcaster.RPCClient
 
 	switch *blockchain {
 	case btcBlockchain:
 		btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
-			Host:         fmt.Sprintf("%s:%d", *rpcHost, *rpcPort),
+			Host:         fmt.Sprintf("%s:%d", *host, *rpcPort),
 			User:         rpcUser,
 			Pass:         rpcPassword,
 			HTTPPostMode: true,
@@ -118,7 +137,7 @@ func run() error {
 			return fmt.Errorf("failed to create rpc client: %v", err)
 		}
 	case bsvBlockchain:
-		rpcURL, err := url.Parse(fmt.Sprintf("rpc://%s:%s@%s:%d", rpcUser, rpcPassword, *rpcHost, *rpcPort))
+		rpcURL, err := url.Parse(fmt.Sprintf("rpc://%s:%s@%s:%d", rpcUser, rpcPassword, *host, *rpcPort))
 		if err != nil {
 			return fmt.Errorf("failed to parse node rpc url: %w", err)
 		}
@@ -150,19 +169,46 @@ func run() error {
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
 	}
 
+	logFile, err := os.OpenFile(*outputFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %v", err)
+	}
+	defer logFile.Close()
+
+	blockChannel := make(chan []string, 1000)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	zmqSubscriber, err := zmq.New(ctx, *host, *zmqPort, logger)
+	if err != nil {
+		return err
+	}
+	if err := zmqSubscriber.Subscribe(pubhashblockTopic, blockChannel); err != nil {
+		return err
+	}
+
+	err = zmqSubscriber.Start(ctx)
+	if err != nil {
+		return err
+	}
+
 	p, err := broadcaster.New(client, logger)
 	if err != nil {
 		return err
 	}
 
 	logger.Info("Preparing utxos")
-
-	err = p.PrepareUtxos(1000)
+	err = p.PrepareUtxos(2000)
 	if err != nil {
 		return err
 	}
 
-	logger.Info("Waiting until to start broadcasting", "time", waitUntil.String())
+	lis := listener.New(client)
+
+	logger.Info("Starting listening")
+	lis.Start(ctx, blockChannel, logFile)
+
+	logger.Info("Waiting to start broadcasting", "until", waitUntil.String())
 	<-startTimer.C
 
 	doneChan := make(chan error) // Channel to signal the completion of Start

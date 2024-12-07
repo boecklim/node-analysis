@@ -104,6 +104,10 @@ func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash
 }
 
 func (p *Client) createSelfPayingTx(txOut broadcaster.TxOut) (*wire.MsgTx, error) {
+	if txOut.Hash == nil {
+		return nil, fmt.Errorf("hash is missing")
+	}
+
 	p.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
 
 	tx := wire.NewMsgTx(wire.TxVersion)
