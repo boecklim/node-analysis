@@ -280,24 +280,6 @@ runcmd:
 EOF
   }
 }
-#
-# resource "azurerm_managed_disk" "managed_disk" {
-#   count                = var.virtual_machines
-#   name                 = "datadisk_existing_${count.index}"
-#   location             = azurerm_resource_group.rg.location
-#   resource_group_name  = azurerm_resource_group.rg.name
-#   storage_account_type = "Standard_LRS"
-#   create_option        = "Empty"
-#   disk_size_gb         = "10"
-# }
-#
-# resource "azurerm_virtual_machine_data_disk_attachment" "managed_disk_attachment" {
-#   count              = var.virtual_machines
-#   managed_disk_id    = azurerm_managed_disk.managed_disk[count.index].id
-#   virtual_machine_id = azurerm_linux_virtual_machine.my_terraform_vm[count.index].id
-#   lun                = "10"
-#   caching            = "ReadWrite"
-# }
 
 resource "local_file" "cloud_pem" {
   filename = "${path.module}/private_keys/cloudtls.pem"
