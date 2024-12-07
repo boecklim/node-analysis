@@ -1,4 +1,4 @@
-package broadcaster
+package processor
 
 import (
 	"context"
@@ -39,7 +39,7 @@ const (
 	millisecondsPerSecond = 1000
 )
 
-func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
+func NewBroadcaster(ctx context.Context, client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 	b := &Broadcaster{
 		client:      client,
 		logger:      logger,
@@ -48,7 +48,7 @@ func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
 
-	ctx, cancelAll := context.WithCancel(context.Background())
+	ctx, cancelAll := context.WithCancel(ctx)
 	b.cancelAll = cancelAll
 	b.ctx = ctx
 
@@ -64,7 +64,7 @@ func (b *Broadcaster) PrepareUtxos(targetUtxos int) (blockHahses map[string]stru
 	return blockHashes, nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterval *time.Duration) (err error) {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 	b.limit = limit
 
 	b.wg.Add(1)
@@ -85,37 +85,10 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
 
-	if genBlocksInterval != nil {
-		genBlocksTicker := time.NewTicker(*genBlocksInterval)
-		var blockID string
-		b.wg.Add(1)
-		go func() {
-			defer func() {
-				b.logger.Info("stopping broadcasting")
-				b.wg.Done()
-			}()
-
-			for {
-				select {
-				case <-genBlocksTicker.C:
-
-					blockID, err = b.client.GenerateBlock()
-					if err != nil {
-						b.logger.Error("failed to generate block", "err", err)
-						continue
-					}
-
-					b.logger.Info("block generated", "ID", blockID)
-				case <-b.ctx.Done():
-					return
-				}
-			}
-		}()
-	}
-
 	errCh := make(chan error, 100)
 	var satoshis int64
 	var hash *chainhash.Hash
+	statTicker := time.NewTicker(5 * time.Second)
 
 	b.wg.Add(1)
 	go func() {
@@ -128,6 +101,8 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterv
 			select {
 			case <-b.ctx.Done():
 				return
+			case <-statTicker.C:
+				b.logger.Info("stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit), slog.Int("utxos", len(b.utxoChannel)))
 			case <-submitTicker.C:
 
 				if b.limit > 0 && atomic.LoadInt64(&b.totalTxs) >= b.limit {

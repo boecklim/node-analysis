@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"node-analysis/broadcaster"
+	"node-analysis/processor"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -25,7 +26,7 @@ const (
 	fee                        = 3000
 )
 
-var _ broadcaster.RPCClient = &Client{}
+var _ processor.RPCClient = &Client{}
 
 var (
 	ErrOutputSpent = errors.New("output already spent")
@@ -54,10 +55,10 @@ func New(client *rpcclient.Client, logger *slog.Logger) (*Client, error) {
 	return p, nil
 }
 
-func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (broadcaster.TxOut, error) {
+func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (processor.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
-		return broadcaster.TxOut{}, err
+		return processor.TxOut{}, err
 	}
 
 	txHash := lastBlock.Transactions[0].TxHash()
@@ -65,14 +66,14 @@ func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (broadcast
 	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
 	txOut, err := p.client.GetTxOut(&txHash, coinBaseVout, false)
 	if err != nil {
-		return broadcaster.TxOut{}, err
+		return processor.TxOut{}, err
 	}
 
 	if txOut == nil {
-		return broadcaster.TxOut{}, ErrOutputSpent
+		return processor.TxOut{}, ErrOutputSpent
 	}
 
-	return broadcaster.TxOut{
+	return processor.TxOut{
 		Hash:            &txHash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
@@ -89,7 +90,7 @@ func (p *Client) getBlocks() (int64, error) {
 	return info.Blocks, nil
 }
 
-func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
+func (p *Client) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	tx, err := p.createSelfPayingTx(txOut)
 	if err != nil {
 		return nil, 0, err
@@ -103,7 +104,7 @@ func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash
 	return txHash, tx.TxOut[0].Value, nil
 }
 
-func (p *Client) createSelfPayingTx(txOut broadcaster.TxOut) (*wire.MsgTx, error) {
+func (p *Client) createSelfPayingTx(txOut processor.TxOut) (*wire.MsgTx, error) {
 	if txOut.Hash == nil {
 		return nil, fmt.Errorf("hash is missing")
 	}
@@ -173,13 +174,29 @@ func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTx
 	return uint64(blockMsg.SerializeSize()), uint64(len(blockMsg.Transactions)), nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
+func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
 	blockHashes = map[string]struct{}{}
 
 	blocks, err := p.getBlocks()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get info: %v", err)
 	}
+
+	signalFinish := make(chan struct{})
+	loggingStopped := make(chan struct{})
+	showTicker := time.NewTicker(2 * time.Second)
+	go func() {
+		defer close(loggingStopped)
+
+		for {
+			select {
+			case <-showTicker.C:
+				p.logger.Info("creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
+			case <-signalFinish:
+				return
+			}
+		}
+	}()
 
 	var bhs []*chainhash.Hash
 	if blocks <= coinbaseSpendableAfterConf {
@@ -217,7 +234,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 			return nil, fmt.Errorf("failed go get block hash at height %d: %v", blockHeight, err)
 		}
 
-		var txOut broadcaster.TxOut
+		var txOut processor.TxOut
 		txOut, err = p.getCoinbaseTxOutFromBlock(blockHash)
 		if err != nil {
 			if errors.Is(err, ErrOutputSpent) {
@@ -226,7 +243,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 			return nil, err
 		}
 
-		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
+		p.logger.Debug("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
 
 		var tx *wire.MsgTx
 		tx, err = splitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
@@ -240,10 +257,10 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 			return nil, fmt.Errorf("failed to send raw tx: %v", err)
 		}
 
-		p.logger.Info("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
+		p.logger.Debug("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
 
 		for i, output := range tx.TxOut {
-			utxoChannel <- broadcaster.TxOut{
+			utxoChannel <- processor.TxOut{
 				Hash:            sentTxHash,
 				ScriptPubKeyHex: hex.EncodeToString(output.PkScript),
 				ValueSat:        output.Value,
@@ -252,10 +269,18 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 		}
 	}
 
+	bhs, err = p.client.GenerateToAddress(1, p.address, nil)
+	for _, bh := range bhs {
+		blockHashes[bh.String()] = struct{}{}
+	}
+
+	close(signalFinish)
+	<-loggingStopped
+
 	return blockHashes, nil
 }
 
-func splitToAddress(address btcutil.Address, txOut broadcaster.TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
+func splitToAddress(address btcutil.Address, txOut processor.TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	prevOut := wire.NewOutPoint(txOut.Hash, 0)

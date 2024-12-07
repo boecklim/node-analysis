@@ -8,10 +8,9 @@ import (
 	"log"
 	"log/slog"
 	"net/url"
-	"node-analysis/broadcaster"
-	"node-analysis/listener"
 	"node-analysis/node_client/bsv"
 	"node-analysis/node_client/btc"
+	"node-analysis/processor"
 	"node-analysis/zmq"
 	"os"
 	"os/signal"
@@ -107,7 +106,7 @@ func run() error {
 
 	startTimer := time.NewTimer(time.Until(waitUntil))
 
-	var client broadcaster.RPCClient
+	var client processor.RPCClient
 
 	switch *blockchain {
 	case btcBlockchain:
@@ -182,7 +181,7 @@ func run() error {
 	}
 	defer logFile.Close()
 
-	blockChannel := make(chan []string, 1000)
+	messageChan := make(chan []string, 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -191,7 +190,7 @@ func run() error {
 		return err
 	}
 
-	err = zmqSubscriber.Subscribe(pubhashblockTopic, blockChannel)
+	err = zmqSubscriber.Subscribe(pubhashblockTopic, messageChan)
 	if err != nil {
 		return err
 	}
@@ -201,49 +200,53 @@ func run() error {
 		return err
 	}
 
-	p, err := broadcaster.New(client, logger)
+	broadcaster, err := processor.NewBroadcaster(ctx, client, logger)
 	if err != nil {
 		return err
 	}
 
 	logger.Info("Preparing utxos")
 	var ignoredBlockHashes map[string]struct{}
-	ignoredBlockHashes, err = p.PrepareUtxos(2000)
+	ignoredBlockHashes, err = broadcaster.PrepareUtxos(10000)
 	if err != nil {
 		return err
 	}
+	newBlockCh := make(chan struct{}, 100)
 
-	lis := listener.New(client)
+	miner := processor.NewMiner(client, logger)
+
+	listener := processor.NewListener(client)
 
 	logger.Info("Starting listening")
-	lis.Start(ctx, ignoredBlockHashes, blockChannel, logFile)
+	listener.Start(ctx, ignoredBlockHashes, messageChan, newBlockCh, logFile)
 
-	logger.Info("Waiting to start broadcasting", "until", waitUntil.String())
+	logger.Info("Waiting to start", "until", waitUntil.String())
 	<-startTimer.C
 
-	doneChan := make(chan error) // Channel to signal the completion of Start
+	logger.Info("Starting mining")
+	miner.Start(ctx, *generateBlocks, newBlockCh)
+
+	doneChan := make(chan error)
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		// Start the broadcasting process
-		err = p.Start(*txsRate, *limit, generateBlocks)
-		logger.Info("Starting broadcaster")
-		doneChan <- err // Send the completion or error signal
+		logger.Info("Starting broadcasting")
+		err = broadcaster.Start(*txsRate, *limit)
+		doneChan <- err
 	}()
 
 	select {
 	case <-signalChan:
-		// If an interrupt signal is received
 		logger.Info("Shutdown signal received. Shutting down the rate broadcaster.")
+		break
 	case err = <-doneChan:
 		if err != nil {
 			logger.Error("Error during broadcasting", slog.String("err", err.Error()))
 		}
 	}
 
-	// Shutdown the broadcaster in all cases
-	p.Shutdown()
+	broadcaster.Shutdown()
 	logger.Info("Broadcasting shutdown complete")
 	return nil
 }

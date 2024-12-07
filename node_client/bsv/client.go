@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"node-analysis/broadcaster"
 	keyset "node-analysis/key_set"
+	"node-analysis/processor"
 	"time"
 
 	ec "github.com/bitcoin-sv/go-sdk/primitives/ec"
@@ -24,7 +24,7 @@ const (
 	outputsPerTx = 50
 )
 
-var _ broadcaster.RPCClient = &Client{}
+var _ processor.RPCClient = &Client{}
 
 var (
 	ErrOutputSpent = errors.New("output already spent")
@@ -71,10 +71,10 @@ func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTx
 
 	return blockMsg.Size, blockMsg.NumTx, nil
 }
-func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut, error) {
+func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (processor.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
-		return broadcaster.TxOut{}, err
+		return processor.TxOut{}, err
 	}
 
 	txHash := lastBlock.Tx[0]
@@ -82,19 +82,19 @@ func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut,
 	// USE GETTXOUT https://bitcoin.stackexchange.com/questions/117919/bitcoin-cli-listunspent-returns-empty-list
 	txOut, err := p.client.GetTxOut(txHash, coinBaseVout, false)
 	if err != nil {
-		return broadcaster.TxOut{}, err
+		return processor.TxOut{}, err
 	}
 
 	if txOut == nil {
-		return broadcaster.TxOut{}, ErrOutputSpent
+		return processor.TxOut{}, ErrOutputSpent
 	}
 
 	hash, err := chainhash.NewHashFromStr(txHash)
 	if err != nil {
-		return broadcaster.TxOut{}, err
+		return processor.TxOut{}, err
 	}
 
-	return broadcaster.TxOut{
+	return processor.TxOut{
 		Hash:            hash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
@@ -102,7 +102,7 @@ func (p *Client) GetCoinbaseTxOutFromBlock(blockHash string) (broadcaster.TxOut,
 	}, nil
 }
 
-func (p *Client) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
+func (p *Client) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	tx := sdkTx.NewTransaction()
 
 	utxo, err := sdkTx.NewUTXO(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))
@@ -169,7 +169,7 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
+func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
 	info, err := p.client.GetInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get info: %v", err)
@@ -248,7 +248,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 				return nil, fmt.Errorf("failed to create tx hash: %v", err)
 			}
 
-			txOut := broadcaster.TxOut{
+			txOut := processor.TxOut{
 				Hash:            hash,
 				ScriptPubKeyHex: hex.EncodeToString(*output.LockingScript),
 				ValueSat:        int64(output.Satoshis),

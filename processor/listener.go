@@ -1,10 +1,9 @@
-package listener
+package processor
 
 import (
 	"context"
 	"io"
 	"log/slog"
-	"node-analysis/broadcaster"
 	"os"
 	"strings"
 	"time"
@@ -19,24 +18,24 @@ const (
 	pubhashtx    = "hashtx"
 )
 
-type Client struct {
-	rpcClient broadcaster.RPCClient
+type Listener struct {
+	rpcClient RPCClient
 }
 
-func New(rpcClient broadcaster.RPCClient) *Client {
-	z := &Client{
+func NewListener(rpcClient RPCClient) *Listener {
+	l := &Listener{
 		rpcClient: rpcClient,
 	}
 
-	return z
+	return l
 }
 
 type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (z *Client) Start(ctx context.Context, ignoreBlockHashes map[string]struct{}, ch chan []string, logFile io.Writer) {
-
+func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struct{}, messageChan chan []string, newBlockCh chan struct{}, logFile io.Writer) {
+	lastBlockFound := time.Now()
 	go func() {
 		listenerLogger := slog.New(
 			slogmulti.Fanout(
@@ -49,10 +48,9 @@ func (z *Client) Start(ctx context.Context, ignoreBlockHashes map[string]struct{
 			case <-ctx.Done():
 				return
 
-			case c := <-ch:
+			case c := <-messageChan:
 				switch c[0] {
 				case pubhashblock:
-
 					_, found := ignoreBlockHashes[c[1]]
 					if found {
 						continue
@@ -60,21 +58,26 @@ func (z *Client) Start(ctx context.Context, ignoreBlockHashes map[string]struct{
 
 					hash := c[1]
 
-					timeStamp := time.Now()
-
 					blockHash, err := chainhash.NewHashFromStr(hash)
 					if err != nil {
 						listenerLogger.Error("failed to create hash from hex string", "err", err)
 						continue
 					}
 
-					sizeBytes, nrTxs, err := z.rpcClient.GetBlockSize(blockHash)
+					sizeBytes, nrTxs, err := l.rpcClient.GetBlockSize(blockHash)
 					if err != nil {
 						listenerLogger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
 						continue
 					}
 
-					listenerLogger.Info("block", "hash", hash, "timestamp", timeStamp.Format(time.RFC3339), "txs", nrTxs, "size", sizeBytes)
+					// Todo: log time elapsed since last block
+					timestamp := time.Now()
+					timeSinceLastBlock := timestamp.Sub(lastBlockFound)
+					listenerLogger.Info("block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)
+
+					lastBlockFound = timestamp
+
+					newBlockCh <- struct{}{}
 
 				default:
 					listenerLogger.Warn("Unhandled ZMQ message", "msg", strings.Join(c, ","))
