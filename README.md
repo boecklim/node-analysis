@@ -1,6 +1,6 @@
 # What is node analysis?
 
-Node anlysis allows to compare BSV & BTC nodes with respect to their performance.
+Node analysis is tool which allows to run simulated networks of BSV & BTC nodes.
 
 ## How to create the infrastructure on Microsoft Azure
 
@@ -20,6 +20,13 @@ Create the infrastructure
     - With the given infrastructure code, the maximum number of VMs is 5
 
 Possibly the quota for `Standard Av2 Family vCPUs` and `Total Regional vCPUs` needs to be increased: https://portal.azure.com/#view/Microsoft_Azure_Capacity/QuotaMenuBlade/~/myQuotas
+
+## How to install
+
+The Go based application `broadcaster` is a tool for submitting transactions to the local node at a given rate.
+
+1. Install Go
+2. Install the broadcaster `go install github.com/boecklim/node-analysis/cmd/broadcaster@latest`
 
 ## Build and deploy node analysis application
 
