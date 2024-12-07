@@ -39,7 +39,7 @@ const (
 	millisecondsPerSecond = 1000
 )
 
-func NewBroadcaster(ctx context.Context, client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
+func NewBroadcaster(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 	b := &Broadcaster{
 		client:      client,
 		logger:      logger,
@@ -48,7 +48,7 @@ func NewBroadcaster(ctx context.Context, client RPCClient, logger *slog.Logger) 
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
 
-	ctx, cancelAll := context.WithCancel(ctx)
+	ctx, cancelAll := context.WithCancel(context.Background())
 	b.cancelAll = cancelAll
 	b.ctx = ctx
 

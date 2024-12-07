@@ -200,7 +200,7 @@ func run() error {
 		return err
 	}
 
-	broadcaster, err := processor.NewBroadcaster(ctx, client, logger)
+	broadcaster, err := processor.NewBroadcaster(client, logger)
 	if err != nil {
 		return err
 	}
