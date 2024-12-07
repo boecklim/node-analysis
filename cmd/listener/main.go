@@ -15,6 +15,8 @@ import (
 	"os"
 	"time"
 
+	slogmulti "github.com/samber/slog-multi"
+
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/ordishs/go-bitcoin"
@@ -43,7 +45,7 @@ const (
 )
 
 func run() error {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	zmqPort := flag.Int("port", zmqPortDefault, "port of listener client")
 	if zmqPort == nil {
@@ -115,7 +117,7 @@ func run() error {
 
 		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 		logger.Info("network info", "version", networkInfo.Version)
-		client, err = btc.New(btcClient)
+		client, err = btc.New(btcClient, logger)
 		if err != nil {
 			return fmt.Errorf("failed to create rpc client: %v", err)
 		}
@@ -143,7 +145,7 @@ func run() error {
 		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 		logger.Info("network info", "version", networkInfo.Version)
 
-		client, err = bsv.New(bsvClient)
+		client, err = bsv.New(bsvClient, logger)
 		if err != nil {
 			return err
 		}
@@ -152,7 +154,19 @@ func run() error {
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
 	}
 
+	logFile, err := os.OpenFile("output.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %v", err)
+	}
+	defer logFile.Close()
+
 	go func() {
+		listenerLogger := slog.New(
+			slogmulti.Fanout(
+				slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
+				slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+			),
+		)
 	loop:
 		for {
 			select {
@@ -161,20 +175,20 @@ func run() error {
 			case blockEvent := <-blockChan:
 				var blockHash *chainhash.Hash
 				var err error
-				logger.Debug("block received", "hash", blockEvent.Hash)
+				listenerLogger.Debug("block received", "hash", blockEvent.Hash)
 				blockHash, err = chainhash.NewHashFromStr(blockEvent.Hash)
 				if err != nil {
-					logger.Error("failed to create hash from hex string", "err", err)
+					listenerLogger.Error("failed to create hash from hex string", "err", err)
 					continue
 				}
 
 				sizeBytes, nrTxs, err := client.GetBlockSize(blockHash)
 				if err != nil {
-					logger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
+					listenerLogger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
 					continue
 				}
 
-				logger.Info("block", "hash", blockEvent.Hash, "timestamp", blockEvent.Timestamp.Format(time.RFC3339), "txs", nrTxs, "size", sizeBytes)
+				listenerLogger.Info("block", "hash", blockEvent.Hash, "timestamp", blockEvent.Timestamp.Format(time.RFC3339), "txs", nrTxs, "size", sizeBytes)
 			}
 		}
 	}()
@@ -182,10 +196,6 @@ func run() error {
 	ch := make(chan []string, 1000)
 
 	if err := zmqSubscriber.Subscribe(pubhashblock, ch); err != nil {
-		return err
-	}
-
-	if err := zmqSubscriber.Subscribe(pubhashtx, ch); err != nil {
 		return err
 	}
 

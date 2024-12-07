@@ -13,6 +13,7 @@ require (
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/ordishs/go-bitcoin v1.0.86
+	github.com/samber/slog-multi v1.2.4
 )
 
 require (
@@ -28,6 +29,7 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/samber/lo v1.47.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
