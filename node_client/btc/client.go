@@ -173,38 +173,48 @@ func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTx
 	return uint64(blockMsg.SerializeSize()), uint64(len(blockMsg.Transactions)), nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) error {
+func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
+	blockHashes = map[string]struct{}{}
+
 	blocks, err := p.getBlocks()
 	if err != nil {
-		return fmt.Errorf("failed to get info: %v", err)
+		return nil, fmt.Errorf("failed to get info: %v", err)
 	}
 
+	var bhs []*chainhash.Hash
 	if blocks <= coinbaseSpendableAfterConf {
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
 		p.logger.Info("generating blocks", "number", blocksToGenerate)
 
-		_, err = p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
+		bhs, err = p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
 		if err != nil {
-			return fmt.Errorf("failed to gnereate to address: %v", err)
+			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
+		}
+
+		for _, bh := range bhs {
+			blockHashes[bh.String()] = struct{}{}
 		}
 	}
 
 	for len(utxoChannel) < targetUtxos {
-		_, err = p.client.GenerateToAddress(1, p.address, nil)
+		bhs, err = p.client.GenerateToAddress(1, p.address, nil)
 		if err != nil {
-			return fmt.Errorf("failed to gnereate to address: %v", err)
+			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
+		}
+		for _, bh := range bhs {
+			blockHashes[bh.String()] = struct{}{}
 		}
 
 		blocks, err = p.getBlocks()
 		if err != nil {
-			return fmt.Errorf("failed to get info: %v", err)
+			return nil, fmt.Errorf("failed to get info: %v", err)
 		}
 
 		blockHeight := blocks - coinbaseSpendableAfterConf
 		var blockHash *chainhash.Hash
 		blockHash, err = p.client.GetBlockHash(blockHeight)
 		if err != nil {
-			return fmt.Errorf("failed go get block hash at height %d: %v", blockHeight, err)
+			return nil, fmt.Errorf("failed go get block hash at height %d: %v", blockHeight, err)
 		}
 
 		var txOut broadcaster.TxOut
@@ -213,7 +223,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 			if errors.Is(err, ErrOutputSpent) {
 				continue
 			}
-			return err
+			return nil, err
 		}
 
 		p.logger.Info("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
@@ -221,13 +231,13 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 		var tx *wire.MsgTx
 		tx, err = splitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
 		if err != nil {
-			return fmt.Errorf("failed split to address: %v", err)
+			return nil, fmt.Errorf("failed split to address: %v", err)
 		}
 
 		var sentTxHash *chainhash.Hash
 		sentTxHash, err = p.client.SendRawTransaction(tx, false)
 		if err != nil {
-			return fmt.Errorf("failed to send raw tx: %v", err)
+			return nil, fmt.Errorf("failed to send raw tx: %v", err)
 		}
 
 		p.logger.Info("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
@@ -242,7 +252,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos in
 		}
 	}
 
-	return nil
+	return blockHashes, nil
 }
 
 func splitToAddress(address btcutil.Address, txOut broadcaster.TxOut, outputs int, privKey *btcec.PrivateKey, fee int64) (*wire.MsgTx, error) {

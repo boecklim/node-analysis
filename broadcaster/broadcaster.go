@@ -14,7 +14,7 @@ import (
 )
 
 type RPCClient interface {
-	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) error
+	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error)
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 	GenerateBlock() (blockID string, err error)
 	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
@@ -55,13 +55,13 @@ func New(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
 	return b, nil
 }
 
-func (b *Broadcaster) PrepareUtxos(targetUtxos int) error {
-	err := b.client.PrepareUtxos(b.utxoChannel, targetUtxos)
+func (b *Broadcaster) PrepareUtxos(targetUtxos int) (blockHahses map[string]struct{}, err error) {
+	blockHashes, err := b.client.PrepareUtxos(b.utxoChannel, targetUtxos)
 	if err != nil {
-		return fmt.Errorf("failed to prepare utxos: %v", err)
+		return nil, fmt.Errorf("failed to prepare utxos: %v", err)
 	}
 
-	return nil
+	return blockHashes, nil
 }
 
 func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64, genBlocksInterval *time.Duration) (err error) {

@@ -183,7 +183,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := zmqSubscriber.Subscribe(pubhashblockTopic, blockChannel); err != nil {
+
+	err = zmqSubscriber.Subscribe(pubhashblockTopic, blockChannel)
+	if err != nil {
 		return err
 	}
 
@@ -198,7 +200,8 @@ func run() error {
 	}
 
 	logger.Info("Preparing utxos")
-	err = p.PrepareUtxos(2000)
+	var ignoredBlockHashes map[string]struct{}
+	ignoredBlockHashes, err = p.PrepareUtxos(2000)
 	if err != nil {
 		return err
 	}
@@ -206,7 +209,7 @@ func run() error {
 	lis := listener.New(client)
 
 	logger.Info("Starting listening")
-	lis.Start(ctx, blockChannel, logFile)
+	lis.Start(ctx, ignoredBlockHashes, blockChannel, logFile)
 
 	logger.Info("Waiting to start broadcasting", "until", waitUntil.String())
 	<-startTimer.C

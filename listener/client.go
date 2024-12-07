@@ -35,7 +35,7 @@ type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (z *Client) Start(ctx context.Context, ch chan []string, logFile io.Writer) {
+func (z *Client) Start(ctx context.Context, ignoreBlockHashes map[string]struct{}, ch chan []string, logFile io.Writer) {
 
 	go func() {
 		listenerLogger := slog.New(
@@ -52,6 +52,11 @@ func (z *Client) Start(ctx context.Context, ch chan []string, logFile io.Writer)
 			case c := <-ch:
 				switch c[0] {
 				case pubhashblock:
+
+					_, found := ignoreBlockHashes[c[1]]
+					if found {
+						continue
+					}
 
 					hash := c[1]
 
