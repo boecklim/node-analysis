@@ -113,7 +113,7 @@ func run() error {
 
 		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 		logger.Info("network info", "version", networkInfo.Version)
-		client, err = btc.New(btcClient)
+		client, err = btc.New(btcClient, logger)
 		if err != nil {
 			return fmt.Errorf("failed to create rpc client: %v", err)
 		}
@@ -141,7 +141,7 @@ func run() error {
 		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
 		logger.Info("network info", "version", networkInfo.Version)
 
-		client, err = bsv.New(bsvClient)
+		client, err = bsv.New(bsvClient, logger)
 		if err != nil {
 			return err
 		}

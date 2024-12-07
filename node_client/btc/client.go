@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"math"
 	"node-analysis/broadcaster"
-	"os"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -41,10 +40,10 @@ type Client struct {
 	privKey  *btcec.PrivateKey
 }
 
-func New(client *rpcclient.Client) (*Client, error) {
+func New(client *rpcclient.Client, logger *slog.Logger) (*Client, error) {
 	p := &Client{
 		client: client,
-		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		logger: logger,
 	}
 
 	err := p.setAddress()

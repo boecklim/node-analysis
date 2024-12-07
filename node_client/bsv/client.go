@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"node-analysis/broadcaster"
 	keyset "node-analysis/key_set"
-	"os"
 	"time"
 
 	ec "github.com/bitcoin-sv/go-sdk/primitives/ec"
@@ -38,10 +37,10 @@ type Client struct {
 	address    string
 }
 
-func New(client *bitcoin.Bitcoind) (*Client, error) {
+func New(client *bitcoin.Bitcoind, logger *slog.Logger) (*Client, error) {
 	p := &Client{
 		client: client,
-		logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		logger: logger,
 	}
 
 	err := p.setAddress()
