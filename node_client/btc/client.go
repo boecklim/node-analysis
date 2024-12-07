@@ -191,7 +191,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		for {
 			select {
 			case <-showTicker.C:
-				p.logger.Info("creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
+				p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 			case <-signalFinish:
 				return
 			}
@@ -201,7 +201,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 	var bhs []*chainhash.Hash
 	if blocks <= coinbaseSpendableAfterConf {
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
-		p.logger.Info("generating blocks", "number", blocksToGenerate)
+		p.logger.Info("Generating blocks", "number", blocksToGenerate)
 
 		bhs, err = p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
 		if err != nil {
@@ -243,7 +243,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 			return nil, err
 		}
 
-		p.logger.Debug("splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
+		p.logger.Debug("Splittable output", "hash", txOut.Hash.String(), "value", txOut.ValueSat, "blockhash", blockHash.String())
 
 		var tx *wire.MsgTx
 		tx, err = splitToAddress(p.address, txOut, outputsPerTx, p.privKey, fee)
@@ -257,7 +257,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 			return nil, fmt.Errorf("failed to send raw tx: %v", err)
 		}
 
-		p.logger.Debug("sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
+		p.logger.Debug("Sent raw tx", "hash", sentTxHash.String(), "outputs", len(tx.TxOut))
 
 		for i, output := range tx.TxOut {
 			utxoChannel <- processor.TxOut{
@@ -276,6 +276,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 
 	close(signalFinish)
 	<-loggingStopped
+	p.logger.Info("Created utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 
 	return blockHashes, nil
 }

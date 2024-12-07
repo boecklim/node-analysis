@@ -93,7 +93,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 	b.wg.Add(1)
 	go func() {
 		defer func() {
-			b.logger.Info("stopping broadcasting")
+			b.logger.Info("Stopping broadcasting")
 			b.wg.Done()
 		}()
 
@@ -102,7 +102,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 			case <-b.ctx.Done():
 				return
 			case <-statTicker.C:
-				b.logger.Info("stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit), slog.Int("utxos", len(b.utxoChannel)))
+				b.logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit), slog.Int("utxos", len(b.utxoChannel)))
 			case <-submitTicker.C:
 
 				if b.limit > 0 && atomic.LoadInt64(&b.totalTxs) >= b.limit {
@@ -118,7 +118,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 						return
 					}
 
-					b.logger.Error("submitting tx failed", "hash", txOut.Hash.String())
+					b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String())
 
 					b.utxoChannel <- TxOut{
 						Hash:            hash,
@@ -131,7 +131,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 					continue
 				}
 
-				b.logger.Debug("submitting tx successful", "hash", hash.String())
+				b.logger.Debug("Submitting tx successful", "hash", hash.String())
 				b.utxoChannel <- TxOut{
 					Hash:            hash,
 					ScriptPubKeyHex: b.addressScriptHex,
@@ -142,7 +142,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 				atomic.AddInt64(&b.totalTxs, 1)
 
 			case responseErr := <-errCh:
-				b.logger.Error("failed to submit transactions", slog.String("err", responseErr.Error()))
+				b.logger.Error("Failed to submit transactions", slog.String("err", responseErr.Error()))
 			}
 		}
 	}()

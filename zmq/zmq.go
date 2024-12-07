@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"log/slog"
 	"strconv"
 	"time"
@@ -197,7 +196,7 @@ func (zmq *ZMQ) Start(ctx context.Context) error {
 				zmq.socket.Close()
 				zmq.connected = false
 			}
-			log.Printf("Attempting to re-establish ZMQ connection in 10 seconds...")
+			zmq.logger.Info("Attempting to re-establish ZMQ connection in 10 seconds...")
 			time.Sleep(10 * time.Second)
 		}
 	}()

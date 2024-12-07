@@ -60,20 +60,20 @@ func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struc
 
 					blockHash, err := chainhash.NewHashFromStr(hash)
 					if err != nil {
-						listenerLogger.Error("failed to create hash from hex string", "err", err)
+						listenerLogger.Error("Failed to create hash from hex string", "err", err)
 						continue
 					}
 
 					sizeBytes, nrTxs, err := l.rpcClient.GetBlockSize(blockHash)
 					if err != nil {
-						listenerLogger.Error("failed to get block for block hash", "hash", blockHash.String(), "err", err)
+						listenerLogger.Error("Failed to get block for block hash", "hash", blockHash.String(), "err", err)
 						continue
 					}
 
 					// Todo: log time elapsed since last block
 					timestamp := time.Now()
 					timeSinceLastBlock := timestamp.Sub(lastBlockFound)
-					listenerLogger.Info("block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)
+					listenerLogger.Info("Block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)
 
 					lastBlockFound = timestamp
 

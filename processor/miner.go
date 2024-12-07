@@ -60,7 +60,7 @@ func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, new
 					continue
 				}
 
-				c.logger.Info("block generated", "ID", blockID)
+				c.logger.Info("Block generated", "ID", blockID)
 			case <-ctx.Done():
 				return
 			}
