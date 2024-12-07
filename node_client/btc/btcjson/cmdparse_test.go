@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestAssignField tests the assignField function handles supported combinations

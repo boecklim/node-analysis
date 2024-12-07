@@ -6,7 +6,7 @@ package rpcclient
 
 import (
 	"fmt"
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 var connCfg = &ConnConfig{

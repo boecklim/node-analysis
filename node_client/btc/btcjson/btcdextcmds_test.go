@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestBtcdExtCmds tests all of the btcd extended commands marshal and unmarshal

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestHelpers tests the various helper functions which create pointers to

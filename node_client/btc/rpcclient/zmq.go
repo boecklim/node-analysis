@@ -3,7 +3,7 @@ package rpcclient
 import (
 	"encoding/json"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // FutureGetZmqNotificationsResult is a future promise to deliver the result of

@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestHelpReflectInternals ensures the various help functions which deal with

@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	keyset "github.com/boecklim/node-analysis/key_set"
+	"github.com/boecklim/node-analysis/processor"
 	"log/slog"
-	keyset "node-analysis/key_set"
-	"node-analysis/processor"
 	"time"
 
 	ec "github.com/bitcoin-sv/go-sdk/primitives/ec"

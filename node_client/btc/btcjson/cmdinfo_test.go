@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestCmdMethod tests the CmdMethod function to ensure it returns the expected

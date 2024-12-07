@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestIsValidIDType ensures the IsValidIDType function behaves as expected.

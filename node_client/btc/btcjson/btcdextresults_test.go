@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestBtcdExtCustomResults ensures any results that have custom marshalling

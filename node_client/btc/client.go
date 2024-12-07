@@ -4,18 +4,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/boecklim/node-analysis/processor"
 	"log/slog"
 	"math"
-	"node-analysis/processor"
 	"time"
 
+	"github.com/boecklim/node-analysis/node_client/btc/rpcclient"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"node-analysis/node_client/btc/rpcclient"
 )
 
 const (
@@ -270,6 +270,10 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 	}
 
 	bhs, err = p.client.GenerateToAddress(1, p.address, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to gnereate to address: %v", err)
+	}
+
 	for _, bh := range bhs {
 		blockHashes[bh.String()] = struct{}{}
 	}

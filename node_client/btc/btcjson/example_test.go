@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // This example demonstrates how to create and marshal a command into a JSON-RPC

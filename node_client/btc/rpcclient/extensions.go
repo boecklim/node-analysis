@@ -12,10 +12,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"node-analysis/node_client/btc/btcjson"
 )
 
 // FutureDebugLevelResult is a future promise to deliver the result of a

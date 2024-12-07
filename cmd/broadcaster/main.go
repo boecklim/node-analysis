@@ -8,18 +8,18 @@ import (
 	"log"
 	"log/slog"
 	"net/url"
-	"node-analysis/node_client/bsv"
-	"node-analysis/node_client/btc"
-	"node-analysis/processor"
-	"node-analysis/zmq"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
+	"github.com/boecklim/node-analysis/node_client/bsv"
+	"github.com/boecklim/node-analysis/node_client/btc"
+	"github.com/boecklim/node-analysis/node_client/btc/rpcclient"
+	"github.com/boecklim/node-analysis/processor"
+	"github.com/boecklim/node-analysis/zmq"
 	"github.com/lmittmann/tint"
 	"github.com/ordishs/go-bitcoin"
-	"node-analysis/node_client/btc/rpcclient"
 )
 
 func main() {

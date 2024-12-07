@@ -10,9 +10,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"node-analysis/node_client/btc/btcjson"
 )
 
 // FutureGetBestBlockHashResult is a future promise to deliver the result of a

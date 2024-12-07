@@ -9,7 +9,7 @@ import (
 	"sort"
 	"testing"
 
-	"node-analysis/node_client/btc/btcjson"
+	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
 )
 
 // TestUsageFlagStringer tests the stringized output for the UsageFlag type.
