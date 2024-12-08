@@ -46,6 +46,8 @@ const (
 )
 
 func run() error {
+	var err error
+
 	blockchain := flag.String("blockchain", "btc", "one of btc | bsv")
 	if blockchain == nil {
 		return errors.New("blockchain not given")
@@ -97,14 +99,12 @@ func run() error {
 		generateBlocks = nil
 	}
 
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
-
-	waitUntil, err := time.Parse(time.RFC3339, *startAt)
+	startBroadcastingAt, err := time.Parse(time.RFC3339, *startAt)
 	if err != nil {
 		return err
 	}
 
-	startTimer := time.NewTimer(time.Until(waitUntil))
+	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
 
 	var client processor.RPCClient
 
@@ -206,8 +206,7 @@ func run() error {
 	}
 
 	logger.Info("Preparing utxos")
-	var ignoredBlockHashes map[string]struct{}
-	ignoredBlockHashes, err = broadcaster.PrepareUtxos(10000)
+	err = broadcaster.PrepareUtxos(10000)
 	if err != nil {
 		return err
 	}
@@ -218,13 +217,10 @@ func run() error {
 	listener := processor.NewListener(client)
 
 	logger.Info("Starting listening")
-	listener.Start(ctx, ignoredBlockHashes, messageChan, newBlockCh, logFile)
-
-	logger.Info("Waiting to start", "until", waitUntil.String())
-	<-startTimer.C
+	listener.Start(ctx, messageChan, newBlockCh, logFile, startBroadcastingAt)
 
 	logger.Info("Starting mining")
-	miner.Start(ctx, *generateBlocks, newBlockCh)
+	miner.Start(ctx, *generateBlocks, newBlockCh, startBroadcastingAt)
 
 	doneChan := make(chan error)
 	signalChan := make(chan os.Signal, 1)

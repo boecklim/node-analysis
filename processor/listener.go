@@ -34,7 +34,7 @@ type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struct{}, messageChan chan []string, newBlockCh chan struct{}, logFile io.Writer) {
+func (l *Listener) Start(ctx context.Context, messageChan chan []string, newBlockCh chan struct{}, logFile io.Writer, logAfter time.Time) {
 	lastBlockFound := time.Now()
 	go func() {
 		listenerLogger := slog.New(
@@ -51,8 +51,8 @@ func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struc
 			case c := <-messageChan:
 				switch c[0] {
 				case pubhashblock:
-					_, found := ignoreBlockHashes[c[1]]
-					if found {
+					if time.Now().Before(logAfter) {
+						// Do not log anything before this point in time
 						continue
 					}
 
@@ -70,7 +70,6 @@ func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struc
 						continue
 					}
 
-					// Todo: log time elapsed since last block
 					timestamp := time.Now()
 					timeSinceLastBlock := timestamp.Sub(lastBlockFound)
 					listenerLogger.Info("Block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339Nano), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)

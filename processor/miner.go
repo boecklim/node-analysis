@@ -33,7 +33,7 @@ func randomSampleExpDist(tau time.Duration) time.Duration {
 	return time.Duration(interval) * time.Millisecond
 }
 
-func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, newBlockChan chan struct{}) {
+func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, newBlockChan chan struct{}, startAt time.Time) {
 	var err error
 	var durationUntilNextBlockMined time.Duration
 
@@ -42,6 +42,11 @@ func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, new
 	timer := time.NewTimer(durationUntilNextBlockMined)
 
 	var blockID string
+
+	startTimer := time.NewTimer(time.Until(startAt))
+	c.logger.Info("Waiting to start", "until", startAt.String())
+	<-startTimer.C
+
 	go func() {
 		defer func() {
 			c.logger.Info("stopping broadcasting")

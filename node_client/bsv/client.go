@@ -169,10 +169,10 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
-func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (blockHashes map[string]struct{}, err error) {
+func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
 	info, err := p.client.GetInfo()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get info: %v", err)
+		return fmt.Errorf("failed to get info: %v", err)
 	}
 
 	// fund node
@@ -185,7 +185,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		for {
 			_, err = p.client.Generate(blockBatch)
 			if err != nil {
-				return nil, fmt.Errorf("failed to generate block batch: %v", err)
+				return fmt.Errorf("failed to generate block batch: %v", err)
 			}
 
 			// give time to send all INV messages
@@ -193,7 +193,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 
 			info, err = p.client.GetInfo()
 			if err != nil {
-				return nil, fmt.Errorf("failed to get info: %v", err)
+				return fmt.Errorf("failed to get info: %v", err)
 			}
 
 			missingBlocks := minNumbeOfBlocks - info.Blocks
@@ -205,23 +205,23 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 
 	fundingTxID, err := p.client.SendToAddress(p.address, 20)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send to address address: %v", err)
+		return fmt.Errorf("failed to send to address address: %v", err)
 	}
 	rawTx, err := p.client.GetRawTransaction(fundingTxID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get raw tx: %v", err)
+		return fmt.Errorf("failed to get raw tx: %v", err)
 	}
 
 	utxo, err := sdkTx.NewUTXO(rawTx.TxID, 1, rawTx.Vout[1].ScriptPubKey.Hex, uint64(rawTx.Vout[1].Value*satPerBtc))
 	if err != nil {
-		return nil, fmt.Errorf("failed creating UTXO: %v", err)
+		return fmt.Errorf("failed creating UTXO: %v", err)
 	}
 
 	for len(utxoChannel) < targetUtxos {
 		var tx *sdkTx.Transaction
 		tx, err = p.splitToAddress(utxo, outputsPerTx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to split utxo to address: %v", err)
+			return fmt.Errorf("failed to split utxo to address: %v", err)
 		}
 
 		fmt.Println(tx.Hex())
@@ -229,7 +229,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		var sentTxHash string
 		sentTxHash, err = p.client.SendRawTransaction(tx.Hex())
 		if err != nil {
-			return nil, fmt.Errorf("failed to send raw transaction: %v", err)
+			return fmt.Errorf("failed to send raw transaction: %v", err)
 		}
 
 		p.logger.Info("sent raw tx", "hash", sentTxHash, "outputs", len(tx.Outputs))
@@ -238,14 +238,14 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 			if i == len(tx.Outputs)-1 {
 				utxo, err = sdkTx.NewUTXO(tx.TxID().String(), uint32(i), output.LockingScriptHex(), output.Satoshis)
 				if err != nil {
-					return nil, fmt.Errorf("failed to create UTXO: %v", err)
+					return fmt.Errorf("failed to create UTXO: %v", err)
 				}
 				break
 			}
 
 			hash, err := chainhash.NewHashFromStr(sentTxHash)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create tx hash: %v", err)
+				return fmt.Errorf("failed to create tx hash: %v", err)
 			}
 
 			txOut := processor.TxOut{
@@ -259,7 +259,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		}
 	}
 
-	return blockHashes, nil
+	return nil
 }
 
 func getNewWalletAddress(bitcoind *bitcoin.Bitcoind) (string, string, error) {
