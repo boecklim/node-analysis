@@ -33,7 +33,7 @@ jobs:
       - name: Build Binary
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -o dist/myapp
+          GOOS=linux GOARCH=amd64 go build -o dist/broadcaster ./cmd/broadcaster/main.go
 
       - name: Create Release
         id: create_release
