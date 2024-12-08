@@ -173,6 +173,7 @@ write_files:
         zmqpubhashblock=tcp://127.0.0.1:29000
         datadir=/home/azureuser/bitcoin-28.0/data
         minrelaytxfee=0
+        listenonion=0
         [regtest]
         connect=10.0.1.5
         connect=10.0.1.6
@@ -207,10 +208,11 @@ runcmd:
   - export GOCACHE=/root/go/cache
   - export GOPATH=/home/azureuser/go
   - go install github.com/boecklim/node-analysis/cmd/broadcaster@${var.broadcaster_version}
+  - sleep 120
+  - /home/azureuser/go/bin/broadcaster -rpc-port=18443 -zmq-port=29000 -blockchain=btc -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/results/output.log
 EOF
   }
 }
-
 
 data "template_cloudinit_config" "config_bsv" {
   gzip          = true

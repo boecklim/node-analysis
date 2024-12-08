@@ -39,3 +39,21 @@ variable "start_time" {
   description = "Time at which to start the broadcaster"
   default = "2024-12-07T17:50:00+01:00"
 }
+
+variable "gen_block_time" {
+  type = string
+  description = "Time at which to mine a new block on average"
+  default = "2m"
+}
+
+variable "rate" {
+  type = number
+  description = "Rate of txs per second to ingest to the node per VM"
+  default = 50
+}
+
+variable "limit" {
+  type = number
+  description = "Limit of txs at which to stop execution of broadcasting"
+  default = 30000
+}
