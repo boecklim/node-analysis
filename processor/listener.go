@@ -73,7 +73,7 @@ func (l *Listener) Start(ctx context.Context, ignoreBlockHashes map[string]struc
 					// Todo: log time elapsed since last block
 					timestamp := time.Now()
 					timeSinceLastBlock := timestamp.Sub(lastBlockFound)
-					listenerLogger.Info("Block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)
+					listenerLogger.Info("Block", "hash", hash, "timestamp", timestamp.Format(time.RFC3339Nano), "delta", timeSinceLastBlock.String(), "txs", nrTxs, "size", sizeBytes)
 
 					lastBlockFound = timestamp
 
