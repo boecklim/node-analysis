@@ -80,7 +80,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 		}
 	}()
 
-	b.logger.Info("Start broadcasting", "outputs", len(b.utxoChannel))
+	b.logger.Info("Starting broadcasting", "outputs", len(b.utxoChannel))
 
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
@@ -106,7 +106,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 			case <-submitTicker.C:
 
 				if b.limit > 0 && atomic.LoadInt64(&b.totalTxs) >= b.limit {
-					b.logger.Info("limit reached", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit))
+					b.logger.Info("Limit reached", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit))
 					b.shutdown <- struct{}{}
 				}
 

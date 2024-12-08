@@ -231,7 +231,6 @@ func run() error {
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		logger.Info("Starting broadcasting")
 		err = broadcaster.Start(*txsRate, *limit)
 		doneChan <- err
 	}()

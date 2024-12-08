@@ -55,6 +55,35 @@ func New(client *rpcclient.Client, logger *slog.Logger) (*Client, error) {
 	return p, nil
 }
 
+func (p *Client) setAddress() error {
+	var err error
+	var privKey *btcec.PrivateKey
+
+	privKey, err = btcec.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed to create private key: %w", err)
+	}
+
+	address, err := btcutil.NewAddressPubKey(privKey.PubKey().SerializeCompressed(),
+		&chaincfg.RegressionNetParams)
+	if err != nil {
+		return err
+	}
+
+	p.address = address
+	p.privKey = privKey
+
+	p.logger.Info("New address", "address", address.EncodeAddress())
+
+	pkScript, err := txscript.PayToAddrScript(p.address)
+	if err != nil {
+		return err
+	}
+
+	p.pkScript = pkScript
+	return nil
+}
+
 func (p *Client) getCoinbaseTxOutFromBlock(blockHash *chainhash.Hash) (processor.TxOut, error) {
 	lastBlock, err := p.client.GetBlock(blockHash)
 	if err != nil {
@@ -137,32 +166,6 @@ func (p *Client) createSelfPayingTx(txOut processor.TxOut) (*wire.MsgTx, error) 
 	p.logger.Debug("tx created", "hash", tx.TxID())
 
 	return tx, nil
-}
-
-func (p *Client) setAddress() error {
-	privKeyBytes, err := hex.DecodeString("13d2c242e1286ce48b86d51742e4a9a44398e36a0400fdb87425a014538a7413")
-	if err != nil {
-		return err
-	}
-	privKey, pubKey := btcec.PrivKeyFromBytes(privKeyBytes)
-	address, err := btcutil.NewAddressPubKey(pubKey.SerializeCompressed(),
-		&chaincfg.RegressionNetParams)
-	if err != nil {
-		return err
-	}
-
-	p.address = address
-	p.privKey = privKey
-
-	p.logger.Info("address", "address", address.EncodeAddress())
-
-	pkScript, err := txscript.PayToAddrScript(p.address)
-	if err != nil {
-		return err
-	}
-
-	p.pkScript = pkScript
-	return nil
 }
 
 func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
