@@ -1,6 +1,6 @@
 module github.com/boecklim/node-analysis
 
-go 1.23.0
+go 1.23.4
 
 require (
 	github.com/bitcoin-sv/go-sdk v1.1.16
