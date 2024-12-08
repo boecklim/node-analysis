@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,6 +119,9 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 					}
 
 					b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String())
+					if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
+						continue
+					}
 
 					b.utxoChannel <- TxOut{
 						Hash:     hash,
