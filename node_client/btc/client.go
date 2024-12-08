@@ -8,6 +8,7 @@ import (
 	"github.com/boecklim/node-analysis/processor"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/boecklim/node-analysis/node_client/btc/rpcclient"
@@ -257,6 +258,17 @@ outerLoop:
 		var sentTxHash *chainhash.Hash
 		sentTxHash, err = p.client.SendRawTransaction(rootTx, false)
 		if err != nil {
+			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
+				p.logger.Error("Failed to send root tx", "err", err)
+				bhs, err := p.client.GenerateToAddress(1, p.address, nil)
+				if err != nil {
+					return fmt.Errorf("failed to gnereate to address: %v", err)
+				}
+
+				p.logger.Info("Generated new block", "hash", bhs[0].String())
+				continue
+			}
+
 			return fmt.Errorf("failed to send root tx: %v", err)
 		}
 
