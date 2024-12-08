@@ -21,10 +21,9 @@ type RPCClient interface {
 }
 
 type Broadcaster struct {
-	client           RPCClient
-	addressScriptHex string
-	logger           *slog.Logger
-	utxoChannel      chan TxOut
+	client      RPCClient
+	logger      *slog.Logger
+	utxoChannel chan TxOut
 
 	cancelAll context.CancelFunc
 	ctx       context.Context
@@ -121,10 +120,9 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 					b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String())
 
 					b.utxoChannel <- TxOut{
-						Hash:            hash,
-						ScriptPubKeyHex: b.addressScriptHex,
-						ValueSat:        satoshis,
-						VOut:            0,
+						Hash:     hash,
+						ValueSat: satoshis,
+						VOut:     0,
 					}
 
 					errCh <- err
@@ -133,10 +131,9 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 
 				b.logger.Debug("Submitting tx successful", "hash", hash.String())
 				b.utxoChannel <- TxOut{
-					Hash:            hash,
-					ScriptPubKeyHex: b.addressScriptHex,
-					ValueSat:        satoshis,
-					VOut:            0,
+					Hash:     hash,
+					ValueSat: satoshis,
+					VOut:     0,
 				}
 
 				atomic.AddInt64(&b.totalTxs, 1)

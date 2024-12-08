@@ -130,7 +130,7 @@ func run() error {
 			return err
 		}
 
-		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
+		logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
 		logger.Info("network info", "version", networkInfo.Version)
 		client, err = btc.New(btcClient, logger)
 		if err != nil {
