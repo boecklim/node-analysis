@@ -198,18 +198,16 @@ write_files:
 runcmd:
   - echo "Running custom startup commands"
   - apt-get update
-  - apt-get install -y wget golang-go ca-certificates
+  - apt-get install -y wget ca-certificates
   - wget -P /home/azureuser https://bitcoincore.org/bin/bitcoin-core-28.0/bitcoin-28.0-x86_64-linux-gnu.tar.gz
   - cd /home/azureuser
   - tar xzf bitcoin-28.0-x86_64-linux-gnu.tar.gz
   - mkdir /home/azureuser/bitcoin-28.0/data
   - systemctl enable bitcoin
   - systemctl start bitcoin
-  - export GOCACHE=/root/go/cache
-  - export GOPATH=/home/azureuser/go
-  - go install github.com/boecklim/node-analysis/cmd/broadcaster@${var.broadcaster_version}
+  - wget -P /home/azureuser https://github.com/boecklim/node-analysis/releases/download/${var.broadcaster_version}/broadcaster
   - sleep 120
-  - /home/azureuser/go/bin/broadcaster -rpc-port=18443 -zmq-port=29000 -blockchain=btc -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/results/output.log
+  - /home/azureuser/broadcaster -rpc-port=18443 -zmq-port=29000 -blockchain=btc -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/output.log
 EOF
   }
 }
