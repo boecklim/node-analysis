@@ -53,7 +53,7 @@ variable "rate" {
 }
 
 variable "limit" {
-  type = number
-  description = "Limit of txs at which to stop execution of broadcasting"
-  default = 30000
+  type = string
+  description = "Time limit after which to stop broadcasting"
+  default = "10m"
 }
