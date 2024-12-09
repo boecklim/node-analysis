@@ -157,7 +157,7 @@ func (p *Client) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *
 		return nil, 0, err
 	}
 
-	txHash, err = p.client.SendRawTransaction(tx, false)
+	txHash, err = p.client.SendRawTransaction(tx, true)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -256,7 +256,7 @@ outerLoop:
 		}
 
 		var sentTxHash *chainhash.Hash
-		sentTxHash, err = p.client.SendRawTransaction(rootTx, false)
+		sentTxHash, err = p.client.SendRawTransaction(rootTx, true)
 		if err != nil {
 			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
 				p.logger.Error("Failed to send root tx", "err", err)
@@ -291,7 +291,7 @@ outerLoop:
 				continue
 			}
 
-			sentTxHash, err = p.client.SendRawTransaction(splitTx1, false)
+			sentTxHash, err = p.client.SendRawTransaction(splitTx1, true)
 			if err != nil {
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
