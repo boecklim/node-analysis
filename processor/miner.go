@@ -33,7 +33,7 @@ func randomSampleExpDist(tau time.Duration) time.Duration {
 	return time.Duration(interval) * time.Millisecond
 }
 
-func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, newBlockChan chan struct{}, startAt time.Time) {
+func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, newBlockChan chan string, startAt time.Time) {
 	var err error
 	var durationUntilNextBlockMined time.Duration
 
@@ -54,9 +54,9 @@ func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, new
 
 		for {
 			select {
-			case <-newBlockChan: // A block has been found by another miner -> reset the timer
+			case blockHash := <-newBlockChan: // A block has been found by another miner -> reset the timer
 				durationUntilNextBlockMined = randomSampleExpDist(genBlocksInterval)
-				c.logger.Info("New block found", slog.Duration("next block", durationUntilNextBlockMined))
+				c.logger.Info("New block found", "hash", blockHash, slog.Duration("next block", durationUntilNextBlockMined))
 
 				timer.Reset(durationUntilNextBlockMined)
 			case <-timer.C: // time is up -> miner has found a block

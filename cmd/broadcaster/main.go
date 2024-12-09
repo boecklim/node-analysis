@@ -210,7 +210,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	newBlockCh := make(chan struct{}, 100)
+	newBlockCh := make(chan string, 100)
 
 	miner := processor.NewMiner(client, logger)
 

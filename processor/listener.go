@@ -34,7 +34,7 @@ type ClientI interface {
 	Subscribe(string, chan []string) error
 }
 
-func (l *Listener) Start(ctx context.Context, messageChan chan []string, newBlockCh chan struct{}, logFile io.Writer, logAfter time.Time) {
+func (l *Listener) Start(ctx context.Context, messageChan chan []string, newBlockCh chan string, logFile io.Writer, logAfter time.Time) {
 	lastBlockFound := time.Now()
 	go func() {
 		listenerLogger := slog.New(
@@ -76,7 +76,7 @@ func (l *Listener) Start(ctx context.Context, messageChan chan []string, newBloc
 
 					lastBlockFound = timestamp
 
-					newBlockCh <- struct{}{}
+					newBlockCh <- hash
 
 				default:
 					listenerLogger.Warn("Unhandled ZMQ message", "msg", strings.Join(c, ","))
@@ -84,5 +84,4 @@ func (l *Listener) Start(ctx context.Context, messageChan chan []string, newBloc
 			}
 		}
 	}()
-
 }
