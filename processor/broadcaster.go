@@ -19,6 +19,7 @@ type RPCClient interface {
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 	GenerateBlock() (blockHash string, err error)
 	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
+	GetMempoolSize() (nrTxs uint64, err error)
 }
 
 type Broadcaster struct {
@@ -90,7 +91,13 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 			case <-ctx.Done():
 				return
 			case <-statTicker.C:
-				logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.String("time left", time.Until(deadline).String()), slog.Int("utxos", len(b.utxoChannel)))
+				var mempoolSize uint64
+				mempoolSize, err = b.client.GetMempoolSize()
+				if err != nil {
+					logger.Error("Failed to get mempool size", "err", err)
+				}
+
+				logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.String("time left", time.Until(deadline).String()), slog.Int("utxos", len(b.utxoChannel)), slog.Uint64("mempool txs", mempoolSize))
 			case <-submitTicker.C:
 				txOut := <-b.utxoChannel
 

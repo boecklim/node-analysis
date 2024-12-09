@@ -208,6 +208,15 @@ func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTx
 	return uint64(blockMsg.SerializeSize()), uint64(len(blockMsg.Transactions)), nil
 }
 
+func (p *Client) GetMempoolSize() (nrTxs uint64, err error) {
+	rawMempool, err := p.client.GetRawMempool()
+	if err != nil {
+		return 0, err
+	}
+
+	return uint64(len(rawMempool)), nil
+}
+
 func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
 	blocks, err := p.getBlockHeight()
 	if err != nil {

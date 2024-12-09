@@ -62,6 +62,16 @@ func (p *Client) setAddress() error {
 
 	return nil
 }
+
+func (p *Client) GetMempoolSize() (nrTxs uint64, err error) {
+	rawMempool, err := p.client.GetRawMempool(false)
+	if err != nil {
+		return 0, err
+	}
+
+	return uint64(len(rawMempool)), nil
+}
+
 func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
 
 	blockMsg, err := p.client.GetBlock(blockHash.String())
