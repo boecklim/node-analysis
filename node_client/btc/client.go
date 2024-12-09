@@ -94,6 +94,12 @@ func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
+		bhs, err := p.client.GenerateToAddress(1, p.address, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
+		}
+		p.logger.Info("Generated new block", "hash", bhs[0].String())
+
 		if counter > 10 {
 			return nil, errors.New("failed to find coinbase tx out")
 		}
@@ -123,13 +129,6 @@ func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
 		if txOut != nil {
 			break
 		}
-
-		bhs, err := p.client.GenerateToAddress(1, p.address, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
-		}
-
-		p.logger.Info("Generated new block", "hash", bhs[0].String())
 
 		counter++
 	}
@@ -260,12 +259,7 @@ outerLoop:
 		if err != nil {
 			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
 				p.logger.Error("Failed to send root tx", "err", err)
-				bhs, err := p.client.GenerateToAddress(1, p.address, nil)
-				if err != nil {
-					return fmt.Errorf("failed to gnereate to address: %v", err)
-				}
 
-				p.logger.Info("Generated new block", "hash", bhs[0].String())
 				continue
 			}
 
@@ -296,7 +290,7 @@ outerLoop:
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
 
-			p.logger.Debug("Sent split tx", "hash", splitTx1.TxID(), "outputs", len(rootTx.TxOut))
+			p.logger.Debug("Sent split tx", "hash", splitTx1.TxID(), "outputs", len(splitTx1.TxOut))
 			for index, output := range splitTx1.TxOut {
 				if len(utxoChannel) >= targetUtxos {
 					break outerLoop
