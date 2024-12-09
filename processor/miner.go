@@ -51,7 +51,7 @@ func (c *Client) Start(ctx context.Context, genBlocksInterval time.Duration, new
 			select {
 			case blockHash := <-newBlockChan: // A block has been found by another miner -> reset the timer
 				durationUntilNextBlockMined = randomSampleExpDist(genBlocksInterval)
-				logger.Info("Block found", "hash", blockHash, slog.Duration("next block", durationUntilNextBlockMined))
+				logger.Info("Block found", "hash", blockHash, slog.String("next block", durationUntilNextBlockMined.String()))
 
 				timer.Reset(durationUntilNextBlockMined)
 			case <-timer.C: // time is up -> miner has found a block
