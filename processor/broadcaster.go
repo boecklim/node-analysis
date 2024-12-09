@@ -17,13 +17,12 @@ import (
 type RPCClient interface {
 	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) (err error)
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
-	GenerateBlock() (blockID string, err error)
+	GenerateBlock() (blockHash string, err error)
 	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
 }
 
 type Broadcaster struct {
 	client      RPCClient
-	logger      *slog.Logger
 	utxoChannel chan TxOut
 
 	cancelAll context.CancelFunc
@@ -38,10 +37,9 @@ const (
 	millisecondsPerSecond = 1000
 )
 
-func NewBroadcaster(client RPCClient, logger *slog.Logger) (*Broadcaster, error) {
+func NewBroadcaster(client RPCClient) (*Broadcaster, error) {
 	b := &Broadcaster{
 		client:      client,
-		logger:      logger,
 		utxoChannel: make(chan TxOut, 10100),
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
@@ -62,11 +60,13 @@ func (b *Broadcaster) PrepareUtxos(targetUtxos int) (err error) {
 	return nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err error) {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger *slog.Logger) (err error) {
 	b.limit = limit
 	deadline := time.Now().Add(limit)
 
-	b.logger.Info("Starting broadcasting", "outputs", len(b.utxoChannel))
+	logger = logger.With(slog.String("service", "broadcaster"))
+
+	logger.Info("Starting broadcasting", "outputs", len(b.utxoChannel))
 
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
@@ -81,7 +81,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 	b.wg.Add(1)
 	go func() {
 		defer func() {
-			b.logger.Info("Stopping broadcasting")
+			logger.Info("Stopping broadcasting")
 			b.wg.Done()
 		}()
 
@@ -90,7 +90,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 			case <-ctx.Done():
 				return
 			case <-statTicker.C:
-				b.logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Duration("time-left", time.Until(deadline)), slog.Int("utxos", len(b.utxoChannel)))
+				logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.String("time left", time.Until(deadline).String()), slog.Int("utxos", len(b.utxoChannel)))
 			case <-submitTicker.C:
 				txOut := <-b.utxoChannel
 
@@ -103,7 +103,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 							return
 						}
 
-						b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String(), "err", err)
+						logger.Error("Submitting tx failed", "hash", txOut.Hash.String(), "err", err)
 						if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
 							continue
 						}
@@ -121,7 +121,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 					continue
 				}
 
-				b.logger.Debug("Submitting tx successful", "hash", hash.String())
+				logger.Debug("Submitting tx successful", "hash", hash.String())
 				b.utxoChannel <- TxOut{
 					Hash:     hash,
 					ValueSat: satoshis,
@@ -129,9 +129,6 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 				}
 
 				atomic.AddInt64(&b.totalTxs, 1)
-
-				//case responseErr := <-errCh:
-				//	b.logger.Error("Failed to submit transactions", slog.String("err", responseErr.Error()))
 			}
 		}
 	}()

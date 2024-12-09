@@ -362,11 +362,11 @@ func (p *Client) splitToAddress(txOut *processor.TxOut, outputs int) (*wire.MsgT
 	return tx, nil
 }
 
-func (p *Client) GenerateBlock() (blockID string, err error) {
-	blockHash, err := p.client.GenerateToAddress(1, p.address, nil)
+func (p *Client) GenerateBlock() (blockHash string, err error) {
+	blockHashes, err := p.client.GenerateToAddress(1, p.address, nil)
 	if err != nil {
 		return "", err
 	}
 
-	return blockHash[0].String(), nil
+	return blockHashes[0].String(), nil
 }

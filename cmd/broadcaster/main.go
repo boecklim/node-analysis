@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	slogmulti "github.com/samber/slog-multi"
 	"log"
 	"log/slog"
 	"net/url"
@@ -200,7 +201,7 @@ func run() error {
 		return err
 	}
 
-	broadcaster, err := processor.NewBroadcaster(client, logger)
+	broadcaster, err := processor.NewBroadcaster(client)
 	if err != nil {
 		return err
 	}
@@ -212,22 +213,29 @@ func run() error {
 	}
 	newBlockCh := make(chan string, 100)
 
-	miner := processor.NewMiner(client, logger)
+	miner := processor.NewMiner(client)
 
 	listener := processor.NewListener(client)
 
 	logger.Info("Starting listening")
-	listener.Start(ctx, messageChan, newBlockCh, logFile, startBroadcastingAt)
+
+	multiLogger := slog.New(
+		slogmulti.Fanout(
+			slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
+			tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}),
+		),
+	)
+	listener.Start(ctx, messageChan, newBlockCh, multiLogger, startBroadcastingAt)
 
 	logger.Info("Starting mining")
-	miner.Start(ctx, *generateBlocks, newBlockCh, startBroadcastingAt)
+	miner.Start(ctx, *generateBlocks, newBlockCh, multiLogger, startBroadcastingAt)
 
 	doneChan := make(chan error)
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		err = broadcaster.Start(*txsRate, *limit)
+		err = broadcaster.Start(*txsRate, *limit, multiLogger)
 		doneChan <- err
 	}()
 
