@@ -28,10 +28,9 @@ type Broadcaster struct {
 
 	cancelAll context.CancelFunc
 	ctx       context.Context
-	shutdown  chan struct{}
 	wg        sync.WaitGroup
 	totalTxs  int64
-	limit     int64
+	limit     time.Duration
 	txChannel chan *wire.MsgTx
 }
 
@@ -44,7 +43,6 @@ func NewBroadcaster(client RPCClient, logger *slog.Logger) (*Broadcaster, error)
 		client:      client,
 		logger:      logger,
 		utxoChannel: make(chan TxOut, 10100),
-		shutdown:    make(chan struct{}, 1),
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
 
@@ -64,21 +62,9 @@ func (b *Broadcaster) PrepareUtxos(targetUtxos int) (err error) {
 	return nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err error) {
 	b.limit = limit
-
-	b.wg.Add(1)
-	go func() {
-		defer b.wg.Done()
-		for {
-			select {
-			case <-b.shutdown:
-				b.cancelAll()
-			case <-b.ctx.Done():
-				return
-			}
-		}
-	}()
+	deadline := time.Now().Add(limit)
 
 	b.logger.Info("Starting broadcasting", "outputs", len(b.utxoChannel))
 
@@ -89,6 +75,8 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 	var satoshis int64
 	var hash *chainhash.Hash
 	statTicker := time.NewTicker(5 * time.Second)
+	ctx, cancel := context.WithDeadline(b.ctx, deadline)
+	defer cancel()
 
 	b.wg.Add(1)
 	go func() {
@@ -99,17 +87,11 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit int64) (err error) {
 
 		for {
 			select {
-			case <-b.ctx.Done():
+			case <-ctx.Done():
 				return
 			case <-statTicker.C:
-				b.logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit), slog.Int("utxos", len(b.utxoChannel)))
+				b.logger.Info("Stats", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Duration("time-left", time.Until(deadline)), slog.Int("utxos", len(b.utxoChannel)))
 			case <-submitTicker.C:
-
-				if b.limit > 0 && atomic.LoadInt64(&b.totalTxs) >= b.limit {
-					b.logger.Info("Limit reached", slog.Int64("total", atomic.LoadInt64(&b.totalTxs)), slog.Int64("limit", b.limit))
-					b.shutdown <- struct{}{}
-				}
-
 				txOut := <-b.utxoChannel
 
 				hash, satoshis, err = b.client.SubmitSelfPayingSingleOutputTx(txOut)

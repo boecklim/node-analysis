@@ -78,7 +78,7 @@ func run() error {
 		return errors.New("rate not given")
 	}
 
-	limit := flag.Int64("limit", 20, "limit of txs at which to stop broadcasting")
+	limit := flag.Duration("limit", 10*time.Minute, "time limit after which to stop broadcasting")
 	if limit == nil {
 		return errors.New("limit not given")
 	}
