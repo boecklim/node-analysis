@@ -281,6 +281,10 @@ runcmd:
   - tar xzf bitcoin-sv-1.1.0-x86_64-linux-gnu.tar.gz
   - systemctl enable bitcoin
   - systemctl start bitcoin
+  - wget -P /home/azureuser https://github.com/boecklim/node-analysis/releases/download/${var.broadcaster_version}/broadcaster
+  - chmod +x /home/azureuser/broadcaster
+  - sleep 120
+  - /home/azureuser/broadcaster -rpc-port=18332 -zmq-port=28332 -blockchain=bsv -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/output.log
 EOF
   }
 }
