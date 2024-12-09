@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -71,7 +70,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
 
-	errCh := make(chan error, 100)
+	//errCh := make(chan error, 100)
 	var satoshis int64
 	var hash *chainhash.Hash
 	statTicker := time.NewTicker(5 * time.Second)
@@ -94,24 +93,35 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 			case <-submitTicker.C:
 				txOut := <-b.utxoChannel
 
-				hash, satoshis, err = b.client.SubmitSelfPayingSingleOutputTx(txOut)
-				if err != nil {
-					if errors.Is(err, context.Canceled) {
-						return
-					}
+				success := false
 
-					b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String())
-					if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
+				for range 3 {
+					hash, satoshis, err = b.client.SubmitSelfPayingSingleOutputTx(txOut)
+					if err != nil {
+						if errors.Is(err, context.Canceled) {
+							return
+						}
+
+						b.logger.Error("Submitting tx failed", "hash", txOut.Hash.String(), "err", err)
+						//if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
+						//	continue
+						//}
+
+						//errCh <- err
+						time.Sleep(50 * time.Millisecond)
 						continue
 					}
 
-					b.utxoChannel <- TxOut{
-						Hash:     hash,
-						ValueSat: satoshis,
-						VOut:     0,
-					}
+					success = true
+					break
+				}
 
-					errCh <- err
+				if !success {
+					//b.utxoChannel <- TxOut{
+					//	Hash:     hash,
+					//	ValueSat: satoshis,
+					//	VOut:     0,
+					//}
 					continue
 				}
 
@@ -124,8 +134,8 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration) (err er
 
 				atomic.AddInt64(&b.totalTxs, 1)
 
-			case responseErr := <-errCh:
-				b.logger.Error("Failed to submit transactions", slog.String("err", responseErr.Error()))
+				//case responseErr := <-errCh:
+				//	b.logger.Error("Failed to submit transactions", slog.String("err", responseErr.Error()))
 			}
 		}
 	}()
