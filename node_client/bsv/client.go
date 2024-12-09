@@ -4,24 +4,27 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	keyset "github.com/boecklim/node-analysis/key_set"
-	"github.com/boecklim/node-analysis/processor"
-	"log/slog"
-	"time"
-
 	ec "github.com/bitcoin-sv/go-sdk/primitives/ec"
 	sdkTx "github.com/bitcoin-sv/go-sdk/transaction"
+	chaincfg "github.com/bitcoin-sv/go-sdk/transaction/chaincfg"
 	"github.com/bitcoin-sv/go-sdk/transaction/template/p2pkh"
 	"github.com/bitcoinsv/bsvutil"
+	keyset "github.com/boecklim/node-analysis/key_set"
+	"github.com/boecklim/node-analysis/processor"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"log/slog"
+	"math"
+	"strings"
+	"time"
 
 	"github.com/ordishs/go-bitcoin"
 )
 
 const (
-	coinBaseVout = 0
-	satPerBtc    = 1e8
-	outputsPerTx = 50
+	coinBaseVout               = 0
+	satPerBtc                  = 1e8
+	outputsPerTx               = 20
+	coinbaseSpendableAfterConf = 200
 )
 
 var _ processor.RPCClient = &Client{}
@@ -52,7 +55,7 @@ func New(client *bitcoin.Bitcoind, logger *slog.Logger) (*Client, error) {
 }
 
 func (p *Client) setAddress() error {
-	ks, err := keyset.NewFromExtendedKeyStr("xprv9s21ZrQH143K2yZtKVRuSXDr1hXNWPciLsRi7SFB5JzY9Z4tAMWUpWdRWhpcqB5ESyGagKQbcejAcj5eQHD8Dej1uYrHYbmma5VEtnTAtg4", "0/0")
+	ks, err := keyset.New(&chaincfg.TestNet)
 	if err != nil {
 		return err
 	}
@@ -64,12 +67,12 @@ func (p *Client) setAddress() error {
 }
 
 func (p *Client) GetMempoolSize() (nrTxs uint64, err error) {
-	rawMempool, err := p.client.GetRawMempool(false)
+	info, err := p.client.GetMempoolInfo()
 	if err != nil {
 		return 0, err
 	}
 
-	return uint64(len(rawMempool)), nil
+	return uint64(info.Size), nil
 }
 
 func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
@@ -179,95 +182,191 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
+func (p *Client) getCoinbaseTxOut(blockHeight *int64) (*processor.TxOut, error) {
+	var txOut *bitcoin.TXOut
+	var txHash string
+	//var bhs []string
+	var err error
+	counter := 0
+
+	// Find a coinbase tx out which has not been spent yet
+	for {
+		time.Sleep(1000 * time.Millisecond)
+		_, err = p.client.GenerateToAddress(float64(1), p.address)
+		if err != nil {
+			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
+		}
+		p.logger.Info("Generated new block")
+
+		*blockHeight++
+
+		if counter > 10 {
+			return nil, errors.New("failed to find coinbase tx out")
+		}
+
+		height := int(*blockHeight) - coinbaseSpendableAfterConf
+		blockHash, err := p.client.GetBlockHash(height)
+		if err != nil {
+			return nil, fmt.Errorf("failed go get block hash at height %d: %v", height, err)
+		}
+
+		coinbase, err := p.client.GetBlockHeaderAndCoinbase(blockHash)
+		if err != nil {
+			return nil, fmt.Errorf("failed go get block header for block hash %s: %v", blockHash, err)
+		}
+
+		txHash = coinbase.Tx[0].TxID
+
+		txOut, err = p.client.GetTxOut(txHash, coinBaseVout, true)
+		if err != nil {
+			return nil, err
+		}
+
+		if txOut != nil {
+			break
+		}
+
+		counter++
+	}
+
+	hash, err := chainhash.NewHashFromStr(txHash)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get hash: %v", err)
+	}
+
+	return &processor.TxOut{
+		Hash:            hash,
+		ValueSat:        int64(txOut.Value * satPerBtc),
+		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
+		VOut:            0,
+	}, nil
+}
+
+func (p *Client) getBlockHeight() (int64, error) {
+	info, err := p.client.GetMiningInfo()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get info: %v", err)
+	}
+
+	return int64(info.Blocks), nil
+}
+
 func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
-	info, err := p.client.GetInfo()
+	blockHeight, err := p.getBlockHeight()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
 	}
 
-	// fund node
-	const minNumbeOfBlocks = 101
-
-	if info.Blocks < minNumbeOfBlocks {
-		// generate blocks in part to ensure blocktx is able to process all blocks
-		const blockBatch = 20 // should be less or equal n*10 where n is number of blocktx instances
+	signalFinish := make(chan struct{})
+	loggingStopped := make(chan struct{})
+	showTicker := time.NewTicker(2 * time.Second)
+	go func() {
+		defer close(loggingStopped)
 
 		for {
-			_, err = p.client.Generate(blockBatch)
-			if err != nil {
-				return fmt.Errorf("failed to generate block batch: %v", err)
-			}
-
-			// give time to send all INV messages
-			time.Sleep(5 * time.Second)
-
-			info, err = p.client.GetInfo()
-			if err != nil {
-				return fmt.Errorf("failed to get info: %v", err)
-			}
-
-			missingBlocks := minNumbeOfBlocks - info.Blocks
-			if missingBlocks < 0 {
-				break
+			select {
+			case <-showTicker.C:
+				p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
+			case <-signalFinish:
+				return
 			}
 		}
-	}
+	}()
 
-	fundingTxID, err := p.client.SendToAddress(p.address, 20)
-	if err != nil {
-		return fmt.Errorf("failed to send to address address: %v", err)
-	}
-	rawTx, err := p.client.GetRawTransaction(fundingTxID)
-	if err != nil {
-		return fmt.Errorf("failed to get raw tx: %v", err)
-	}
-
-	utxo, err := sdkTx.NewUTXO(rawTx.TxID, 1, rawTx.Vout[1].ScriptPubKey.Hex, uint64(rawTx.Vout[1].Value*satPerBtc))
-	if err != nil {
-		return fmt.Errorf("failed creating UTXO: %v", err)
-	}
-
-	for len(utxoChannel) < targetUtxos {
-		var tx *sdkTx.Transaction
-		tx, err = p.splitToAddress(utxo, outputsPerTx)
+	if blockHeight <= coinbaseSpendableAfterConf {
+		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blockHeight
+		p.logger.Info("Generating blocks", "number", blocksToGenerate)
+		_, err = p.client.GenerateToAddress(float64(blocksToGenerate), p.address)
 		if err != nil {
-			return fmt.Errorf("failed to split utxo to address: %v", err)
+			return fmt.Errorf("failed to gnereate to address: %v", err)
+		}
+		blockHeight += blocksToGenerate
+	}
+outerLoop:
+	for len(utxoChannel) < targetUtxos {
+		var rootTxOut *processor.TxOut
+		rootTxOut, err = p.getCoinbaseTxOut(&blockHeight)
+		if err != nil {
+			return fmt.Errorf("failed to get coinbaise tx out: %v", err)
 		}
 
-		fmt.Println(tx.Hex())
+		p.logger.Debug("Splittable output", "hash", rootTxOut.Hash.String(), "value", rootTxOut.ValueSat)
+
+		rootTx, err := p.splitToAddress(rootTxOut, outputsPerTx)
+		if err != nil {
+			return fmt.Errorf("failed split to address: %v", err)
+		}
 
 		var sentTxHash string
-		sentTxHash, err = p.client.SendRawTransaction(tx.Hex())
+		sentTxHash, err = p.client.SendRawTransaction(rootTx.Hex())
 		if err != nil {
-			return fmt.Errorf("failed to send raw transaction: %v", err)
+			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
+				p.logger.Error("Failed to send root tx", "err", err)
+
+				continue
+			}
+
+			return fmt.Errorf("failed to send root tx: %v", err)
 		}
 
-		p.logger.Info("sent raw tx", "hash", sentTxHash, "outputs", len(tx.Outputs))
+		p.logger.Info("Sent root tx", "hash", sentTxHash, "outputs", len(rootTx.Outputs))
 
-		for i, output := range tx.Outputs {
-			if i == len(tx.Outputs)-1 {
-				utxo, err = sdkTx.NewUTXO(tx.TxID().String(), uint32(i), output.LockingScriptHex(), output.Satoshis)
-				if err != nil {
-					return fmt.Errorf("failed to create UTXO: %v", err)
-				}
-				break
-			}
+		hash, err := chainhash.NewHash(rootTx.TxID()[:])
+		if err != nil {
+			return fmt.Errorf("failed get hash: %v", err)
+		}
 
-			hash, err := chainhash.NewHashFromStr(sentTxHash)
-			if err != nil {
-				return fmt.Errorf("failed to create tx hash: %v", err)
-			}
+		var splitTxOut *processor.TxOut
 
-			txOut := processor.TxOut{
+		for rootIndex, rootOutput := range rootTx.Outputs {
+			splitTxOut = &processor.TxOut{
 				Hash:            hash,
-				ScriptPubKeyHex: hex.EncodeToString(*output.LockingScript),
-				ValueSat:        int64(output.Satoshis),
-				VOut:            uint32(i),
+				ValueSat:        int64(rootOutput.Satoshis),
+				ScriptPubKeyHex: hex.EncodeToString(rootOutput.LockingScript.Bytes()),
+				VOut:            uint32(rootIndex),
 			}
 
-			utxoChannel <- txOut
+			splitTx1, err := p.splitToAddress(splitTxOut, outputsPerTx)
+			if err != nil {
+				continue
+			}
+
+			sentTxHash, err = p.client.SendRawTransaction(splitTx1.Hex())
+			if err != nil {
+				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
+			}
+
+			p.logger.Debug("Sent split tx", "hash", splitTx1.TxID(), "outputs", len(splitTx1.Outputs))
+			for index, output := range splitTx1.Outputs {
+				if len(utxoChannel) >= targetUtxos {
+					break outerLoop
+				}
+
+				newHash, err := chainhash.NewHashFromStr(sentTxHash)
+				if err != nil {
+					return fmt.Errorf("failed get hash: %v", err)
+				}
+
+				utxoChannel <- processor.TxOut{
+					Hash:            newHash,
+					ScriptPubKeyHex: output.LockingScriptHex(),
+					ValueSat:        int64(output.Satoshis),
+					VOut:            uint32(index),
+				}
+			}
 		}
 	}
+
+	bhs, err := p.client.GenerateToAddress(float64(1), p.address)
+	if err != nil {
+		return fmt.Errorf("failed to gnereate to address: %v", err)
+	}
+
+	p.logger.Info("Generated new block", "hash", bhs[0])
+
+	close(signalFinish)
+	<-loggingStopped
+	p.logger.Info("Created utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 
 	return nil
 }
@@ -319,17 +418,22 @@ type UnspentOutput struct {
 	Amount       float64 `json:"amount"`
 }
 
-func (p *Client) splitToAddress(utxo *sdkTx.UTXO, outputs int) (*sdkTx.Transaction, error) {
+func (p *Client) splitToAddress(txOut *processor.TxOut, outputs int) (*sdkTx.Transaction, error) {
+	utxo, err := sdkTx.NewUTXO(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create utxo: %v", err)
+	}
+
 	tx := sdkTx.NewTransaction()
 
-	err := tx.AddInputsFromUTXOs(utxo)
+	err = tx.AddInputsFromUTXOs(utxo)
 	if err != nil {
 		return nil, fmt.Errorf("failed adding input: %v", err)
 	}
 	// Add an output to the address you've previously created
 
 	const feeValue = 20 // Set your default fee value here
-	const satPerOutput = 1000
+	satPerOutput := uint64(math.Floor(float64(txOut.ValueSat) / float64(outputs+1)))
 
 	totalSat, err := tx.TotalInputSatoshis()
 	if err != nil {

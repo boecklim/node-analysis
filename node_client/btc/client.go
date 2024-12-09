@@ -24,7 +24,7 @@ const (
 	coinBaseVout               = 0
 	satPerBtc                  = 1e8
 	coinbaseSpendableAfterConf = 100
-	outputsPerTx               = 20 // must be lower than 25 otherwise err="-26: too-long-mempool-chain, too many descendants for tx ..."
+	outputsPerTx               = 20
 	fee                        = 3000
 )
 
