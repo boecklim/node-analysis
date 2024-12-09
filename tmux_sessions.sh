@@ -24,5 +24,8 @@ tmux send-keys "./connect.sh 4" C-m
 # Balance panes to ensure equal size
 tmux select-layout tiled
 
+# Turn on pane synchronization
+tmux setw synchronize-panes on
+
 # Attach to the tmux session
 tmux attach-session -t $SESSION_NAME
