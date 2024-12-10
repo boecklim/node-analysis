@@ -183,24 +183,14 @@ func signAllInputs(tx *sdkTx.Transaction, privateKey string) error {
 	return nil
 }
 
-func (p *Client) getCoinbaseTxOut(blockHeight *int64) (*processor.TxOut, error) {
+func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
 	var txOut *bitcoin.TXOut
 	var txHash string
-	//var bhs []string
 	var err error
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
-		time.Sleep(1000 * time.Millisecond)
-		_, err = p.client.GenerateToAddress(float64(1), p.address)
-		if err != nil {
-			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
-		}
-		p.logger.Info("Generated new block")
-
-		*blockHeight++
-
-		height := int(*blockHeight) - coinbaseSpendableAfterConf
+		height := rand.Intn(200)
 		blockHash, err := p.client.GetBlockHash(height)
 		if err != nil {
 			return nil, fmt.Errorf("failed go get block hash at height %d: %v", height, err)
@@ -269,19 +259,18 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		}
 	}()
 
-	if blockHeight <= coinbaseSpendableAfterConf {
-		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blockHeight
+	if blockHeight <= 500 {
+		blocksToGenerate := 500 - blockHeight
 		p.logger.Info("Generating blocks", "number", blocksToGenerate)
 		_, err = p.client.GenerateToAddress(float64(blocksToGenerate), p.address)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
-		blockHeight += blocksToGenerate
 	}
 outerLoop:
 	for len(utxoChannel) < targetUtxos {
 		var rootTxOut *processor.TxOut
-		rootTxOut, err = p.getCoinbaseTxOut(&blockHeight)
+		rootTxOut, err = p.getCoinbaseTxOut()
 		if err != nil {
 			return fmt.Errorf("failed to get coinbaise tx out: %v", err)
 		}
