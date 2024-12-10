@@ -327,27 +327,57 @@ outerLoop:
 				continue
 			}
 
-			sentTxHash, err = p.client.SendRawTransaction(splitTx1.Hex())
+			sentTxHash1, err := p.client.SendRawTransaction(splitTx1.Hex())
 			if err != nil {
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
 
-			p.logger.Debug("Sent split tx", "hash", splitTx1.TxID(), "outputs", len(splitTx1.Outputs))
-			for index, output := range splitTx1.Outputs {
+			p.logger.Debug("Sent split tx 2", "hash", splitTx1.TxID(), "outputs", len(splitTx1.Outputs))
+
+			newHash1, err := chainhash.NewHashFromStr(sentTxHash1)
+			if err != nil {
+				return fmt.Errorf("failed get hash: %v", err)
+			}
+
+			var splitTxOut2 *processor.TxOut
+			for index1, output1 := range splitTx1.Outputs {
 				if len(utxoChannel) >= targetUtxos {
 					break outerLoop
 				}
-
-				newHash, err := chainhash.NewHashFromStr(sentTxHash)
-				if err != nil {
-					return fmt.Errorf("failed get hash: %v", err)
+				splitTxOut2 = &processor.TxOut{
+					Hash:            newHash1,
+					ValueSat:        int64(output1.Satoshis),
+					ScriptPubKeyHex: hex.EncodeToString(output1.LockingScript.Bytes()),
+					VOut:            uint32(index1),
 				}
 
-				utxoChannel <- processor.TxOut{
-					Hash:            newHash,
-					ScriptPubKeyHex: output.LockingScriptHex(),
-					ValueSat:        int64(output.Satoshis),
-					VOut:            uint32(index),
+				splitTx2, err := p.splitToAddress(splitTxOut2, outputsPerTx)
+				if err != nil {
+					continue
+				}
+
+				sentTxHash2, err := p.client.SendRawTransaction(splitTx2.Hex())
+				if err != nil {
+					return fmt.Errorf("failed to send splitTx1 tx: %v", err)
+				}
+
+				p.logger.Debug("Sent split tx 2", "hash", splitTx1.TxID(), "outputs", len(splitTx1.Outputs))
+				for index2, output2 := range splitTx2.Outputs {
+					if len(utxoChannel) >= targetUtxos {
+						break outerLoop
+					}
+
+					newHash2, err := chainhash.NewHashFromStr(sentTxHash2)
+					if err != nil {
+						return fmt.Errorf("failed get hash: %v", err)
+					}
+
+					utxoChannel <- processor.TxOut{
+						Hash:            newHash2,
+						ScriptPubKeyHex: output2.LockingScriptHex(),
+						ValueSat:        int64(output2.Satoshis),
+						VOut:            uint32(index2),
+					}
 				}
 			}
 		}
