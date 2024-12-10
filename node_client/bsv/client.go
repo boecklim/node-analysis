@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"log/slog"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -245,6 +246,8 @@ func (p *Client) getBlockHeight() (int64, error) {
 }
 
 func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
+	time.Sleep(time.Duration(rand.Intn(30)) * time.Second) // Wait a random number of seconds to avoid fork at start
+
 	blockHeight, err := p.getBlockHeight()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
