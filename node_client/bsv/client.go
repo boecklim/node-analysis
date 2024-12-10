@@ -6,7 +6,6 @@ import (
 	"fmt"
 	ec "github.com/bitcoin-sv/go-sdk/primitives/ec"
 	sdkTx "github.com/bitcoin-sv/go-sdk/transaction"
-	chaincfg "github.com/bitcoin-sv/go-sdk/transaction/chaincfg"
 	"github.com/bitcoin-sv/go-sdk/transaction/template/p2pkh"
 	"github.com/bitcoinsv/bsvutil"
 	keyset "github.com/boecklim/node-analysis/key_set"
@@ -56,7 +55,7 @@ func New(client *bitcoin.Bitcoind, logger *slog.Logger) (*Client, error) {
 }
 
 func (p *Client) setAddress() error {
-	ks, err := keyset.New(&chaincfg.TestNet)
+	ks, err := keyset.NewFromExtendedKeyStr("xprv9s21ZrQH143K2yZtKVRuSXDr1hXNWPciLsRi7SFB5JzY9Z4tAMWUpWdRWhpcqB5ESyGagKQbcejAcj5eQHD8Dej1uYrHYbmma5VEtnTAtg4", "0/0")
 	if err != nil {
 		return err
 	}
