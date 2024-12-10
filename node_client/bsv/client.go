@@ -187,7 +187,6 @@ func (p *Client) getCoinbaseTxOut(blockHeight *int64) (*processor.TxOut, error) 
 	var txHash string
 	//var bhs []string
 	var err error
-	counter := 0
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
@@ -199,10 +198,6 @@ func (p *Client) getCoinbaseTxOut(blockHeight *int64) (*processor.TxOut, error) 
 		p.logger.Info("Generated new block")
 
 		*blockHeight++
-
-		if counter > 10 {
-			return nil, errors.New("failed to find coinbase tx out")
-		}
 
 		height := int(*blockHeight) - coinbaseSpendableAfterConf
 		blockHash, err := p.client.GetBlockHash(height)
@@ -225,8 +220,6 @@ func (p *Client) getCoinbaseTxOut(blockHeight *int64) (*processor.TxOut, error) 
 		if txOut != nil {
 			break
 		}
-
-		counter++
 	}
 
 	hash, err := chainhash.NewHashFromStr(txHash)
@@ -369,53 +362,6 @@ outerLoop:
 	p.logger.Info("Created utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 
 	return nil
-}
-
-func getNewWalletAddress(bitcoind *bitcoin.Bitcoind) (string, string, error) {
-	address, err := bitcoind.GetNewAddress()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to get new address: %v", err)
-	}
-
-	privateKey, err := bitcoind.DumpPrivKey(address)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to dump private key: %v", err)
-	}
-
-	accountName := "test-account"
-	err = bitcoind.SetAccount(address, accountName)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to set account: %v", err)
-	}
-
-	return address, privateKey, nil
-}
-
-func getUtxos(bitcoind *bitcoin.Bitcoind, address string) ([]UnspentOutput, error) {
-	data, err := bitcoind.ListUnspent([]string{address})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list unspent: %v", err)
-	}
-
-	result := make([]UnspentOutput, len(data))
-
-	for index, utxo := range data {
-		result[index] = UnspentOutput{
-			Txid:         utxo.TXID,
-			Vout:         utxo.Vout,
-			ScriptPubKey: utxo.ScriptPubKey,
-			Amount:       utxo.Amount,
-		}
-	}
-
-	return result, nil
-}
-
-type UnspentOutput struct {
-	Txid         string  `json:"txid"`
-	Vout         uint32  `json:"vout"`
-	ScriptPubKey string  `json:"scriptPubKey"`
-	Amount       float64 `json:"amount"`
 }
 
 func (p *Client) splitToAddress(txOut *processor.TxOut, outputs int) (*sdkTx.Transaction, error) {
