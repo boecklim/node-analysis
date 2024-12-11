@@ -10,3 +10,4 @@ infra/private_keys/
 blocking_output.log
 /.idea
 /results
+/env
