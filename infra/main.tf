@@ -232,11 +232,22 @@ write_files:
         listen=1
         regtest=1
         printtoconsole=1
+        txindex=1
+        dnsseed=0
+        upnp=0
+        usecashaddr=0
+        debug=1
         rpcport=18332
         rpcuser=bitcoin
         rpcpassword=bitcoin
         rpcallowip=0.0.0.0/0
         port=18444
+        listenonion=0
+        addressindex=1
+        timestampindex=1
+        spentindex=1
+        rpcthreads=24
+        rpcworkqueue=600
         blockmaxsize=512000000
         excessiveblocksize=2000000000
         maxstackmemoryusageconsensus=200000000
@@ -249,6 +260,7 @@ write_files:
         banscore=10000
         zmqpubhashblock=tcp://*:28332
         zmqpubhashtx=tcp://*:28332
+        invalidtxsink=ZMQ
         genesisactivationheight=1
         minminingtxfee=0.0000005
 
