@@ -6,6 +6,8 @@ SESSION_NAME="my_panes_session"
 # Create a new tmux session (detached)
 tmux new-session -d -s $SESSION_NAME
 
+# Todo: iterate over VMs
+
 # Split the window into panes
 tmux send-keys "./connect.sh 0" C-m  # Command for the first (default) pane
 
