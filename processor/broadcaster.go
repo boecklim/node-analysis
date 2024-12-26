@@ -86,6 +86,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 			b.wg.Done()
 		}()
 
+	mainLoop:
 		for {
 			select {
 			case <-ctx.Done():
@@ -112,7 +113,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 
 						logger.Error("Submitting tx failed", "hash", txOut.Hash.String(), "err", err)
 						if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
-							continue
+							continue mainLoop
 						}
 
 						//errCh <- err

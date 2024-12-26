@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/boecklim/node-analysis/node_client/bsv"
-	"github.com/boecklim/node-analysis/node_client/btc"
 	"github.com/boecklim/node-analysis/processor"
 	"github.com/boecklim/node-analysis/zmq"
 	"github.com/lmittmann/tint"
@@ -128,7 +127,7 @@ func run() error {
 
 		logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
 		logger.Info("network info", "version", networkInfo.Version)
-		client, err = btc.New(btcClient, logger)
+		client, err = node_client.NewProcessor(btcClient, logger)
 		if err != nil {
 			return fmt.Errorf("failed to create rpc client: %v", err)
 		}
