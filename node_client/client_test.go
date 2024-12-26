@@ -35,7 +35,7 @@ func TestClient_GetMiningInfo(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, miningInfo)
 
-			blockHash, err := client.GenerateBlock()
+			blockHash, err := client.GenerateToAddress(1, "")
 			require.NoError(t, err)
 
 			require.NotNil(t, blockHash)

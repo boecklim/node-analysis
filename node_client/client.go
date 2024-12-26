@@ -5,12 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/boecklim/node-analysis/processor"
-	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
+	"github.com/boecklim/node-analysis/node_client/btc"
 	"io"
 	"log/slog"
 	"net/http"
@@ -108,70 +103,9 @@ type Client struct {
 	host     string
 	port     int
 	user     string
-	passowrd string
+	password string
 
-	logger   *slog.Logger
-	pkScript []byte
-	address  btcutil.Address
-	privKey  *btcec.PrivateKey
-}
-
-func (c *Client) setAddress() error {
-	var err error
-	var privKey *btcec.PrivateKey
-
-	privKey, err = btcec.NewPrivateKey()
-	if err != nil {
-		return fmt.Errorf("failed to create private key: %w", err)
-	}
-
-	address, err := btcutil.NewAddressPubKey(privKey.PubKey().SerializeCompressed(),
-		&chaincfg.RegressionNetParams)
-	if err != nil {
-		return err
-	}
-
-	c.address = address
-	c.privKey = privKey
-
-	c.logger.Info("New address", "address", address.EncodeAddress())
-
-	pkScript, err := txscript.PayToAddrScript(c.address)
-	if err != nil {
-		return err
-	}
-
-	c.pkScript = pkScript
-	return nil
-}
-
-func (c *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *Client) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *Client) GenerateBlock() ([]string, error) {
-	blockHashes, err := sendJsonRPCCall[[]string]("generatetoaddress", []interface{}{1, c.address.EncodeAddress(), 3}, c.host, c.port, c.user, c.passowrd)
-	if err != nil {
-		return nil, err
-	}
-
-	return *blockHashes, nil
-}
-
-func (c *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (c *Client) GetMempoolSize() (nrTxs uint64, err error) {
-	//TODO implement me
-	panic("implement me")
+	logger *slog.Logger
 }
 
 func New(host string, port int, user, password string, logger *slog.Logger) (*Client, error) {
@@ -180,33 +114,50 @@ func New(host string, port int, user, password string, logger *slog.Logger) (*Cl
 		host:     host,
 		port:     port,
 		user:     user,
-		passowrd: password,
-	}
-
-	err := c.setAddress()
-	if err != nil {
-		return nil, err
+		password: password,
 	}
 
 	return c, nil
 }
 
-func (c *Client) GetMiningInfo() (*GetMiningInfoResult, error) {
-	return sendJsonRPCCall[GetMiningInfoResult]("getmininginfo", nil, c.host, c.port, c.user, c.passowrd)
+func (c *Client) SendRawTransaction(hexString string) (*string, error) {
+	return sendJsonRPCCall[string]("sendrawtransaction", []interface{}{hexString, 0}, c.host, c.port, c.user, c.password)
 }
 
-// GetMiningInfoResult models the data from the getmininginfo command.
-type GetMiningInfoResult struct {
-	Blocks             int64   `json:"blocks"`
-	CurrentBlockSize   uint64  `json:"currentblocksize"`
-	CurrentBlockWeight uint64  `json:"currentblockweight"`
-	CurrentBlockTx     uint64  `json:"currentblocktx"`
-	Difficulty         float64 `json:"difficulty"`
-	Errors             string  `json:"errors"`
-	Generate           bool    `json:"generate"`
-	GenProcLimit       int32   `json:"genproclimit"`
-	HashesPerSec       float64 `json:"hashespersec"`
-	NetworkHashPS      float64 `json:"networkhashps"`
-	PooledTx           uint64  `json:"pooledtx"`
-	TestNet            bool    `json:"testnet"`
+func (c *Client) GetMiningInfo() (*btc.GetMiningInfoResult, error) {
+	return sendJsonRPCCall[btc.GetMiningInfoResult]("getmininginfo", nil, c.host, c.port, c.user, c.password)
+}
+
+func (c *Client) GetBlock(blockHash string) (*btc.GetBlockVerboseResult, error) {
+	return sendJsonRPCCall[btc.GetBlockVerboseResult]("getblock", []interface{}{blockHash}, c.host, c.port, c.user, c.password)
+}
+
+func (c *Client) GetBlockHash(blockHeight int64) (*string, error) {
+	return sendJsonRPCCall[string]("getblockhash", []interface{}{blockHeight}, c.host, c.port, c.user, c.password)
+}
+
+func (c *Client) GetTxOut(txHash string, index uint32, mempool bool) (*btc.GetTxOutResult, error) {
+	return sendJsonRPCCall[btc.GetTxOutResult]("gettxout", []interface{}{txHash, index, mempool}, c.host, c.port, c.user, c.password)
+}
+
+func (c *Client) GetNetworkInfo() (*btc.GetNetworkInfoResult, error) {
+	return sendJsonRPCCall[btc.GetNetworkInfoResult]("getnetworkinfo", nil, c.host, c.port, c.user, c.password)
+}
+
+func (c *Client) GenerateToAddress(nBlocks int64, address string) ([]string, error) {
+	hashes, err := sendJsonRPCCall[[]string]("generatetoaddress", []interface{}{nBlocks, address}, c.host, c.port, c.user, c.password)
+	if err != nil {
+		return nil, err
+	}
+
+	return *hashes, nil
+}
+
+func (c *Client) GetRawMempool() ([]string, error) {
+	hashes, err := sendJsonRPCCall[[]string]("getrawmempool", nil, c.host, c.port, c.user, c.password)
+	if err != nil {
+		return nil, err
+	}
+
+	return *hashes, nil
 }

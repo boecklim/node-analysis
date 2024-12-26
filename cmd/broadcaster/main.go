@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/boecklim/node-analysis/node_client"
 	slogmulti "github.com/samber/slog-multi"
 	"log"
 	"log/slog"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/boecklim/node-analysis/node_client/bsv"
 	"github.com/boecklim/node-analysis/node_client/btc"
-	"github.com/boecklim/node-analysis/node_client/btc/rpcclient"
 	"github.com/boecklim/node-analysis/processor"
 	"github.com/boecklim/node-analysis/zmq"
 	"github.com/lmittmann/tint"
@@ -111,15 +111,10 @@ func run() error {
 
 	switch *blockchain {
 	case btcBlockchain:
-		btcClient, err := rpcclient.New(&rpcclient.ConnConfig{
-			Host:         fmt.Sprintf("%s:%d", *host, *rpcPort),
-			User:         rpcUser,
-			Pass:         rpcPassword,
-			HTTPPostMode: true,
-			DisableTLS:   true,
-		}, nil)
+
+		btcClient, err := node_client.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
 		if err != nil {
-			return fmt.Errorf("failed to create btc rpc client: %v", err)
+			return err
 		}
 		info, err := btcClient.GetMiningInfo()
 		if err != nil {

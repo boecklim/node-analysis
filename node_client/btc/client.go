@@ -1,17 +1,16 @@
 package btc
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/boecklim/node-analysis/node_client/btc/btcjson"
-	"github.com/boecklim/node-analysis/processor"
 	"log/slog"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/boecklim/node-analysis/node_client/btc/rpcclient"
+	"github.com/boecklim/node-analysis/processor"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -34,8 +33,102 @@ var (
 	ErrOutputSpent = errors.New("output already spent")
 )
 
+// GetMiningInfoResult models the data from the getmininginfo command.
+type GetMiningInfoResult struct {
+	Blocks             int64   `json:"blocks"`
+	CurrentBlockSize   uint64  `json:"currentblocksize"`
+	CurrentBlockWeight uint64  `json:"currentblockweight"`
+	CurrentBlockTx     uint64  `json:"currentblocktx"`
+	Difficulty         float64 `json:"difficulty"`
+	Errors             string  `json:"errors"`
+	Generate           bool    `json:"generate"`
+	GenProcLimit       int32   `json:"genproclimit"`
+	HashesPerSec       float64 `json:"hashespersec"`
+	NetworkHashPS      float64 `json:"networkhashps"`
+	PooledTx           uint64  `json:"pooledtx"`
+	TestNet            bool    `json:"testnet"`
+}
+type GetBlockVerboseResult struct {
+	Hash          string   `json:"hash"`
+	Confirmations int64    `json:"confirmations"`
+	StrippedSize  int32    `json:"strippedsize"`
+	Size          int32    `json:"size"`
+	Weight        int32    `json:"weight"`
+	Height        int64    `json:"height"`
+	Version       int32    `json:"version"`
+	VersionHex    string   `json:"versionHex"`
+	MerkleRoot    string   `json:"merkleroot"`
+	Tx            []string `json:"tx,omitempty"`
+	Time          int64    `json:"time"`
+	Nonce         uint32   `json:"nonce"`
+	Bits          string   `json:"bits"`
+	Difficulty    float64  `json:"difficulty"`
+	PreviousHash  string   `json:"previousblockhash"`
+	NextHash      string   `json:"nextblockhash,omitempty"`
+}
+type GetNetworkInfoResult struct {
+	Version         int32                  `json:"version"`
+	SubVersion      string                 `json:"subversion"`
+	ProtocolVersion int32                  `json:"protocolversion"`
+	LocalServices   string                 `json:"localservices"`
+	LocalRelay      bool                   `json:"localrelay"`
+	TimeOffset      int64                  `json:"timeoffset"`
+	Connections     int32                  `json:"connections"`
+	ConnectionsIn   int32                  `json:"connections_in"`
+	ConnectionsOut  int32                  `json:"connections_out"`
+	NetworkActive   bool                   `json:"networkactive"`
+	Networks        []NetworksResult       `json:"networks"`
+	RelayFee        float64                `json:"relayfee"`
+	IncrementalFee  float64                `json:"incrementalfee"`
+	LocalAddresses  []LocalAddressesResult `json:"localaddresses"`
+	Warnings        StringOrArray          `json:"warnings"`
+}
+
+type StringOrArray []string
+
+type LocalAddressesResult struct {
+	Address string `json:"address"`
+	Port    uint16 `json:"port"`
+	Score   int32  `json:"score"`
+}
+
+type NetworksResult struct {
+	Name                      string `json:"name"`
+	Limited                   bool   `json:"limited"`
+	Reachable                 bool   `json:"reachable"`
+	Proxy                     string `json:"proxy"`
+	ProxyRandomizeCredentials bool   `json:"proxy_randomize_credentials"`
+}
+
+// GetTxOutResult models the data from the gettxout command.
+type GetTxOutResult struct {
+	BestBlock     string             `json:"bestblock"`
+	Confirmations int64              `json:"confirmations"`
+	Value         float64            `json:"value"`
+	ScriptPubKey  ScriptPubKeyResult `json:"scriptPubKey"`
+	Coinbase      bool               `json:"coinbase"`
+}
+type ScriptPubKeyResult struct {
+	Asm       string   `json:"asm"`
+	Hex       string   `json:"hex,omitempty"`
+	ReqSigs   int32    `json:"reqSigs,omitempty"` // Deprecated: removed in Bitcoin Core
+	Type      string   `json:"type"`
+	Address   string   `json:"address,omitempty"`
+	Addresses []string `json:"addresses,omitempty"` // Deprecated: removed in Bitcoin Core
+}
+
+type RPCClient interface {
+	GenerateToAddress(nBlocks int64, address string) ([]string, error)
+	GetMiningInfo() (*GetMiningInfoResult, error)
+	GetBlock(blockHash string) (*GetBlockVerboseResult, error)
+	GetBlockHash(blockHeight int64) (*string, error)
+	GetTxOut(txHash string, index uint32, mempool bool) (*GetTxOutResult, error)
+	SendRawTransaction(hexString string) (*string, error)
+	GetRawMempool() ([]string, error)
+}
+
 type Client struct {
-	client *rpcclient.Client
+	client RPCClient
 	logger *slog.Logger
 
 	pkScript []byte
@@ -43,7 +136,7 @@ type Client struct {
 	privKey  *btcec.PrivateKey
 }
 
-func New(client *rpcclient.Client, logger *slog.Logger) (*Client, error) {
+func New(client RPCClient, logger *slog.Logger) (*Client, error) {
 	p := &Client{
 		client: client,
 		logger: logger,
@@ -87,18 +180,18 @@ func (p *Client) setAddress() error {
 }
 
 func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
-	var txOut *btcjson.GetTxOutResult
-	var txHash chainhash.Hash
+	var txOut *GetTxOutResult
+	var txHash string
 
 	counter := 0
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
-		bhs, err := p.client.GenerateToAddress(1, p.address, nil)
+		bhs, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
 		if err != nil {
 			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
 		}
-		p.logger.Info("Generated new block", "hash", bhs[0].String())
+		p.logger.Info("Generated new block", "hash", bhs[0])
 
 		if counter > 10 {
 			return nil, errors.New("failed to find coinbase tx out")
@@ -109,19 +202,20 @@ func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
 			return nil, fmt.Errorf("failed to get info: %v", err)
 		}
 
-		blockHash, err := p.client.GetBlockHash(blockHeight - coinbaseSpendableAfterConf)
+		bh := blockHeight - coinbaseSpendableAfterConf
+		blockHash, err := p.client.GetBlockHash(bh)
 		if err != nil {
-			return nil, fmt.Errorf("failed go get block hash at height %d: %v", blockHeight-coinbaseSpendableAfterConf, err)
+			return nil, fmt.Errorf("failed go get block hash at height %d: %v", bh, err)
 		}
 
-		block, err := p.client.GetBlock(blockHash)
+		block, err := p.client.GetBlock(*blockHash)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get block for hash %s: %v", *blockHash, err)
 		}
 
-		txHash = block.Transactions[0].TxHash()
+		txHash = block.Tx[0]
 
-		txOut, err = p.client.GetTxOut(&txHash, coinBaseVout, false)
+		txOut, err = p.client.GetTxOut(txHash, coinBaseVout, false)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +227,13 @@ func (p *Client) getCoinbaseTxOut() (*processor.TxOut, error) {
 		counter++
 	}
 
+	hash, err := chainhash.NewHashFromStr(txHash)
+	if err != nil {
+		return nil, err
+	}
+
 	return &processor.TxOut{
-		Hash:            &txHash,
+		Hash:            hash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
 		VOut:            0,
@@ -150,17 +249,36 @@ func (p *Client) getBlockHeight() (int64, error) {
 	return info.Blocks, nil
 }
 
+func getHexString(tx *wire.MsgTx) (string, error) {
+	buf := bytes.Buffer{}
+	err := tx.Serialize(&buf)
+	if err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(buf.Bytes()), nil
+}
+
 func (p *Client) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	tx, err := p.createSelfPayingTx(txOut)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	txHash, err = p.client.SendRawTransaction(tx, true)
+	hexString, err := getHexString(tx)
 	if err != nil {
 		return nil, 0, err
 	}
 
+	hash, err := p.client.SendRawTransaction(hexString)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	txHash, err = chainhash.NewHashFromStr(*hash)
+	if err != nil {
+		return nil, 0, err
+	}
 	return txHash, tx.TxOut[0].Value, nil
 }
 
@@ -200,12 +318,12 @@ func (p *Client) createSelfPayingTx(txOut processor.TxOut) (*wire.MsgTx, error) 
 }
 
 func (p *Client) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
-	blockMsg, err := p.client.GetBlock(blockHash)
+	blockMsg, err := p.client.GetBlock(blockHash.String())
 	if err != nil {
 		return 0, 0, err
 	}
 
-	return uint64(blockMsg.SerializeSize()), uint64(len(blockMsg.Transactions)), nil
+	return uint64(blockMsg.Size), uint64(len(blockMsg.Tx)), nil
 }
 
 func (p *Client) GetMempoolSize() (nrTxs uint64, err error) {
@@ -243,7 +361,7 @@ func (p *Client) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int)
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
 		p.logger.Info("Generating blocks", "number", blocksToGenerate)
 
-		_, err = p.client.GenerateToAddress(blocksToGenerate, p.address, nil)
+		_, err = p.client.GenerateToAddress(blocksToGenerate, p.address.EncodeAddress())
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -263,8 +381,13 @@ outerLoop:
 			return fmt.Errorf("failed split to address: %v", err)
 		}
 
-		var sentTxHash *chainhash.Hash
-		sentTxHash, err = p.client.SendRawTransaction(rootTx, true)
+		hexString, err := getHexString(rootTx)
+		if err != nil {
+			return err
+		}
+
+		var sentTxHash *string
+		sentTxHash, err = p.client.SendRawTransaction(hexString)
 		if err != nil {
 			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
 				p.logger.Error("Failed to send root tx", "err", err)
@@ -275,7 +398,7 @@ outerLoop:
 			return fmt.Errorf("failed to send root tx: %v", err)
 		}
 
-		p.logger.Debug("Sent root tx", "hash", sentTxHash.String(), "outputs", len(rootTx.TxOut))
+		p.logger.Debug("Sent root tx", "hash", *sentTxHash, "outputs", len(rootTx.TxOut))
 
 		hash := rootTx.TxHash()
 
@@ -294,7 +417,11 @@ outerLoop:
 				continue
 			}
 
-			sentTxHash, err = p.client.SendRawTransaction(splitTx1, true)
+			hexString, err := getHexString(rootTx)
+			if err != nil {
+				return err
+			}
+			sentTxHash, err = p.client.SendRawTransaction(hexString)
 			if err != nil {
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
@@ -304,8 +431,14 @@ outerLoop:
 				if len(utxoChannel) >= targetUtxos {
 					break outerLoop
 				}
+
+				hash, err := chainhash.NewHashFromStr(*sentTxHash)
+				if err != nil {
+					return err
+				}
+
 				utxoChannel <- processor.TxOut{
-					Hash:            sentTxHash,
+					Hash:            hash,
 					ScriptPubKeyHex: hex.EncodeToString(output.PkScript),
 					ValueSat:        output.Value,
 					VOut:            uint32(index),
@@ -314,12 +447,12 @@ outerLoop:
 		}
 	}
 
-	bhs, err := p.client.GenerateToAddress(1, p.address, nil)
+	bhs, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
 	if err != nil {
 		return fmt.Errorf("failed to gnereate to address: %v", err)
 	}
 
-	p.logger.Info("Generated new block", "hash", bhs[0].String())
+	p.logger.Info("Generated new block", "hash", bhs[0])
 
 	close(signalFinish)
 	<-loggingStopped
@@ -372,10 +505,10 @@ func (p *Client) splitToAddress(txOut *processor.TxOut, outputs int) (*wire.MsgT
 }
 
 func (p *Client) GenerateBlock() (blockHash string, err error) {
-	blockHashes, err := p.client.GenerateToAddress(1, p.address, nil)
+	blockHashes, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
 	if err != nil {
 		return "", err
 	}
 
-	return blockHashes[0].String(), nil
+	return blockHashes[0], nil
 }
