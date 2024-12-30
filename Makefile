@@ -1,11 +1,11 @@
 
-.PHONY: run-bsv
-run-bsv:
+.PHONY: run
+run:
 	docker-compose down --remove-orphans
 	docker-compose up -d
 
-.PHONY: stop-bsv
-stop-bsv:
+.PHONY: stop
+stop:
 	docker-compose down
 
 .PHONY: lint
