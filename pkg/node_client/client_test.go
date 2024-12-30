@@ -1,9 +1,10 @@
-package btc
+package node_client
 
 import (
-	"github.com/stretchr/testify/require"
 	"log/slog"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestClient_GetMiningInfo(t *testing.T) {

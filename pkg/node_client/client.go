@@ -1,11 +1,10 @@
-package btc
+package node_client
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/boecklim/node-analysis/node_client"
 	"io"
 	"log/slog"
 	"net/http"
@@ -120,28 +119,31 @@ func New(host string, port int, user, password string, logger *slog.Logger) (*Cl
 	return c, nil
 }
 
-func (c *Client) SendRawTransaction(hexString string) (*string, error) {
+func (c *Client) SendRawTransaction(hexString string, isBSV bool) (*string, error) {
+	if isBSV {
+		return sendJsonRPCCall[string]("sendrawtransaction", []interface{}{hexString, true, true}, c.host, c.port, c.user, c.password)
+	}
 	return sendJsonRPCCall[string]("sendrawtransaction", []interface{}{hexString, 0}, c.host, c.port, c.user, c.password)
 }
 
-func (c *Client) GetMiningInfo() (*node_client.GetMiningInfoResult, error) {
-	return sendJsonRPCCall[node_client.GetMiningInfoResult]("getmininginfo", nil, c.host, c.port, c.user, c.password)
+func (c *Client) GetMiningInfo() (*GetMiningInfoResult, error) {
+	return sendJsonRPCCall[GetMiningInfoResult]("getmininginfo", nil, c.host, c.port, c.user, c.password)
 }
 
-func (c *Client) GetBlock(blockHash string) (*node_client.GetBlockVerboseResult, error) {
-	return sendJsonRPCCall[node_client.GetBlockVerboseResult]("getblock", []interface{}{blockHash}, c.host, c.port, c.user, c.password)
+func (c *Client) GetBlock(blockHash string) (*GetBlockVerboseResult, error) {
+	return sendJsonRPCCall[GetBlockVerboseResult]("getblock", []interface{}{blockHash}, c.host, c.port, c.user, c.password)
 }
 
 func (c *Client) GetBlockHash(blockHeight int64) (*string, error) {
 	return sendJsonRPCCall[string]("getblockhash", []interface{}{blockHeight}, c.host, c.port, c.user, c.password)
 }
 
-func (c *Client) GetTxOut(txHash string, index uint32, mempool bool) (*node_client.GetTxOutResult, error) {
-	return sendJsonRPCCall[node_client.GetTxOutResult]("gettxout", []interface{}{txHash, index, mempool}, c.host, c.port, c.user, c.password)
+func (c *Client) GetTxOut(txHash string, index uint32, mempool bool) (*GetTxOutResult, error) {
+	return sendJsonRPCCall[GetTxOutResult]("gettxout", []interface{}{txHash, index, mempool}, c.host, c.port, c.user, c.password)
 }
 
-func (c *Client) GetNetworkInfo() (*node_client.GetNetworkInfoResult, error) {
-	return sendJsonRPCCall[node_client.GetNetworkInfoResult]("getnetworkinfo", nil, c.host, c.port, c.user, c.password)
+func (c *Client) GetNetworkInfo() (*GetNetworkInfoResult, error) {
+	return sendJsonRPCCall[GetNetworkInfoResult]("getnetworkinfo", nil, c.host, c.port, c.user, c.password)
 }
 
 func (c *Client) GenerateToAddress(nBlocks int64, address string) ([]string, error) {

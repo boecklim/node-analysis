@@ -5,20 +5,20 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/boecklim/node-analysis/node_client"
-	"github.com/boecklim/node-analysis/node_client/bsv"
-	"github.com/boecklim/node-analysis/node_client/btc"
-	slogmulti "github.com/samber/slog-multi"
 	"log"
 	"log/slog"
+	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
-	"github.com/boecklim/node-analysis/processor"
-	"github.com/boecklim/node-analysis/zmq"
+	"github.com/boecklim/node-analysis/pkg/node_client"
 	"github.com/lmittmann/tint"
+	slogmulti "github.com/samber/slog-multi"
+
+	"github.com/boecklim/node-analysis/pkg/processor"
+	"github.com/boecklim/node-analysis/pkg/zmq"
 )
 
 func main() {
@@ -39,8 +39,6 @@ const (
 	btcBlockchain  = "btc"
 
 	pubhashblockTopic = "hashblock"
-	pubhashtxTopic    = "hashtx"
-	hostDefault       = "localhost"
 	zmqPortDefault    = 29000
 )
 
@@ -100,7 +98,7 @@ func run() error {
 
 	var startBroadcastingAt time.Time
 	if *startAt == "" {
-		startBroadcastingAt = time.Now().Add(5 * time.Second)
+		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(15 * time.Second)
 	} else {
 		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
 		if err != nil {
@@ -110,38 +108,37 @@ func run() error {
 
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
 
+	btcClient, err := node_client.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
+	if err != nil {
+		return err
+	}
 	var proc processor.Processor
-	var btcClient node_client.RPCClient
 
 	switch *blockchain {
 	case btcBlockchain:
-		btcClient, err = btc.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
-		if err != nil {
-			return err
-		}
+		proc, err = node_client.NewProcessor(btcClient, logger, false)
 	case bsvBlockchain:
-		btcClient, err = bsv.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
-		if err != nil {
-			return err
-		}
-
+		proc, err = node_client.NewProcessor(btcClient, logger, true)
 	default:
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
+	}
+	if err != nil {
+		return err
 	}
 
 	info, err := btcClient.GetMiningInfo()
 	if err != nil {
 		return fmt.Errorf("failed to get info: %v", err)
 	}
+	logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
 
 	networkInfo, err := btcClient.GetNetworkInfo()
 	if err != nil {
 		return err
 	}
 
-	logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
 	logger.Info("network info", "version", networkInfo.Version)
-	proc, err = node_client.NewProcessor(btcClient, logger, *blockchain == "bsv")
+
 	if err != nil {
 		return fmt.Errorf("failed to create rpc client: %v", err)
 	}
@@ -191,6 +188,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	waitTime := time.Duration(rand.Intn(1000)) * time.Millisecond
+
+	logger.Info("waiting for broadcaster to start", "wait", waitTime)
+
+	time.Sleep(waitTime)
 
 	logger.Info("Preparing utxos")
 	err = broadcaster.PrepareUtxos(10000)

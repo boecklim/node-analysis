@@ -6,24 +6,25 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/libsv/go-bk/bec"
-	chaincfg2 "github.com/libsv/go-bk/chaincfg"
-	"github.com/libsv/go-bk/wif"
-	"github.com/libsv/go-bt/v2/bscript"
 	"log/slog"
 	"math"
 	"strings"
 	"time"
 
-	"github.com/boecklim/node-analysis/processor"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/libsv/go-bk/bec"
+	chaincfgSV "github.com/libsv/go-bk/chaincfg"
+	"github.com/libsv/go-bk/wif"
 	"github.com/libsv/go-bt/v2"
+	"github.com/libsv/go-bt/v2/bscript"
 	"github.com/libsv/go-bt/v2/unlocker"
+
+	"github.com/boecklim/node-analysis/pkg/processor"
 )
 
 const (
@@ -127,7 +128,7 @@ type RPCClient interface {
 	GetBlock(blockHash string) (*GetBlockVerboseResult, error)
 	GetBlockHash(blockHeight int64) (*string, error)
 	GetTxOut(txHash string, index uint32, mempool bool) (*GetTxOutResult, error)
-	SendRawTransaction(hexString string) (*string, error)
+	SendRawTransaction(hexString string, isBSV bool) (*string, error)
 	GetRawMempool() ([]string, error)
 }
 
@@ -174,7 +175,7 @@ func (p *Processor) setAddressBSV() error {
 		return err
 	}
 
-	newWif, err := wif.NewWIF(privKey, &chaincfg2.TestNet, false)
+	newWif, err := wif.NewWIF(privKey, &chaincfgSV.TestNet, false)
 	if err != nil {
 		return err
 	}
@@ -187,8 +188,6 @@ func (p *Processor) setAddressBSV() error {
 	p.addressBSV = *address
 	p.privKeyBSV = newWif.PrivKey
 	p.addressString = address.AddressString
-
-	//fundingScript, _ := bscript.NewP2PKHFromAddress(fundingAddr.AddressString)
 
 	return nil
 }
@@ -315,7 +314,7 @@ func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHas
 		return nil, 0, err
 	}
 
-	_, err = p.client.SendRawTransaction(txResult.hexString)
+	_, err = p.client.SendRawTransaction(txResult.hexString, p.isBSV)
 	if err != nil {
 		if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
 			p.logger.Error("Submitting tx failed", "txOut.hash", txOut.Hash.String(), "txOut.value", txOut.ValueSat, "txOut.vout", txOut.VOut, "hash", txResult.hash.String(), "err", err)
@@ -453,7 +452,7 @@ func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos i
 		for {
 			select {
 			case <-showTicker.C:
-				//p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
+				p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 			case <-signalFinish:
 				return
 			}
@@ -490,7 +489,7 @@ outerLoop:
 		}
 
 		var sentTxHash *string
-		sentTxHash, err = p.client.SendRawTransaction(rootSplitResult.hexString)
+		sentTxHash, err = p.client.SendRawTransaction(rootSplitResult.hexString, p.isBSV)
 		if err != nil {
 			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
 				p.logger.Error("Failed to send root tx", "err", err)
@@ -523,7 +522,7 @@ outerLoop:
 				continue
 			}
 
-			splitTxHash, err := p.client.SendRawTransaction(splitTxSplitResult.hexString)
+			splitTxHash, err := p.client.SendRawTransaction(splitTxSplitResult.hexString, p.isBSV)
 			if err != nil {
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
