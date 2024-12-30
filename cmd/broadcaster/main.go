@@ -6,20 +6,19 @@ import (
 	"flag"
 	"fmt"
 	"github.com/boecklim/node-analysis/node_client"
+	"github.com/boecklim/node-analysis/node_client/bsv"
+	"github.com/boecklim/node-analysis/node_client/btc"
 	slogmulti "github.com/samber/slog-multi"
 	"log"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
-	"github.com/boecklim/node-analysis/node_client/bsv"
 	"github.com/boecklim/node-analysis/processor"
 	"github.com/boecklim/node-analysis/zmq"
 	"github.com/lmittmann/tint"
-	"github.com/ordishs/go-bitcoin"
 )
 
 func main() {
@@ -68,7 +67,7 @@ func run() error {
 		return errors.New("rpc host not given")
 	}
 
-	outputPath := flag.String("output", "output.log", "path to output file of listener e.g. ./results/output.log")
+	outputPath := flag.String("output", "", "path to output file of listener e.g. ./results/output.log")
 	if outputPath == nil {
 		return errors.New("output not given")
 	}
@@ -88,7 +87,7 @@ func run() error {
 		return errors.New("generate block interval not given")
 	}
 
-	startAt := flag.String("start-at", "2024-10-01T00:00:00+01:00", "time at which to start - format RFC3339: e.g. 2024-12-02T21:16:00+01:00")
+	startAt := flag.String("start-at", "", "time at which to start - format RFC3339: e.g. 2024-12-02T21:16:00+01:00")
 	if startAt == nil {
 		return errors.New("startAt not given")
 	}
@@ -99,63 +98,29 @@ func run() error {
 		generateBlocks = nil
 	}
 
-	startBroadcastingAt, err := time.Parse(time.RFC3339, *startAt)
-	if err != nil {
-		return err
+	var startBroadcastingAt time.Time
+	if *startAt == "" {
+		startBroadcastingAt = time.Now().Add(5 * time.Second)
+	} else {
+		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
+		if err != nil {
+			return err
+		}
 	}
 
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
 
-	var client processor.RPCClient
+	var proc processor.Processor
+	var btcClient node_client.RPCClient
 
 	switch *blockchain {
 	case btcBlockchain:
-
-		btcClient, err := node_client.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
+		btcClient, err = btc.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
 		if err != nil {
 			return err
-		}
-		info, err := btcClient.GetMiningInfo()
-		if err != nil {
-			return fmt.Errorf("failed to get info: %v", err)
-		}
-
-		networkInfo, err := btcClient.GetNetworkInfo()
-		if err != nil {
-			return err
-		}
-
-		logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
-		logger.Info("network info", "version", networkInfo.Version)
-		client, err = node_client.NewProcessor(btcClient, logger)
-		if err != nil {
-			return fmt.Errorf("failed to create rpc client: %v", err)
 		}
 	case bsvBlockchain:
-		rpcURL, err := url.Parse(fmt.Sprintf("rpc://%s:%s@%s:%d", rpcUser, rpcPassword, *host, *rpcPort))
-		if err != nil {
-			return fmt.Errorf("failed to parse node rpc url: %w", err)
-		}
-
-		bsvClient, err := bitcoin.NewFromURL(rpcURL, false)
-		if err != nil {
-			return fmt.Errorf("failed to create bitcoin client: %w", err)
-		}
-
-		info, err := bsvClient.GetMiningInfo()
-		if err != nil {
-			return fmt.Errorf("failed to get info: %v", err)
-		}
-
-		networkInfo, err := bsvClient.GetNetworkInfo()
-		if err != nil {
-			return err
-		}
-
-		logger.Info("mining info", "blocks", info.Blocks, "current block size", info.CurrentBlockSize)
-		logger.Info("network info", "version", networkInfo.Version)
-
-		client, err = bsv.New(bsvClient, logger)
+		btcClient, err = bsv.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
 		if err != nil {
 			return err
 		}
@@ -164,17 +129,44 @@ func run() error {
 		return fmt.Errorf("given blockchain %s not valid - has to be either %s or %s", *blockchain, bsvBlockchain, btcBlockchain)
 	}
 
-	path := filepath.Dir(*outputPath)
-	err = os.MkdirAll(path, os.ModePerm)
+	info, err := btcClient.GetMiningInfo()
 	if err != nil {
-		return fmt.Errorf("failed to create path: %v", err)
+		return fmt.Errorf("failed to get info: %v", err)
 	}
 
-	logFile, err := os.OpenFile(*outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	networkInfo, err := btcClient.GetNetworkInfo()
 	if err != nil {
-		return fmt.Errorf("failed to open file: %v", err)
+		return err
 	}
-	defer logFile.Close()
+
+	logger.Info("mining info", "blocks", info.Blocks, "errors", info.Errors)
+	logger.Info("network info", "version", networkInfo.Version)
+	proc, err = node_client.NewProcessor(btcClient, logger, *blockchain == "bsv")
+	if err != nil {
+		return fmt.Errorf("failed to create rpc client: %v", err)
+	}
+	var broadcasterLogger *slog.Logger
+	if *outputPath != "" {
+		path := filepath.Dir(*outputPath)
+		err = os.MkdirAll(path, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("failed to create path: %v", err)
+		}
+
+		logFile, err := os.OpenFile(*outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open file: %v", err)
+		}
+		defer logFile.Close()
+		broadcasterLogger = slog.New(
+			slogmulti.Fanout(
+				slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
+				tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}),
+			),
+		)
+	} else {
+		broadcasterLogger = logger
+	}
 
 	messageChan := make(chan []string, 1000)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -195,7 +187,7 @@ func run() error {
 		return err
 	}
 
-	broadcaster, err := processor.NewBroadcaster(client)
+	broadcaster, err := processor.NewBroadcaster(proc)
 	if err != nil {
 		return err
 	}
@@ -207,29 +199,23 @@ func run() error {
 	}
 	newBlockCh := make(chan string, 100)
 
-	miner := processor.NewMiner(client)
+	miner := processor.NewMiner(proc)
 
-	listener := processor.NewListener(client)
+	listener := processor.NewListener(proc)
 
 	logger.Info("Starting listening")
 
-	multiLogger := slog.New(
-		slogmulti.Fanout(
-			slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
-			tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}),
-		),
-	)
-	listener.Start(ctx, messageChan, newBlockCh, multiLogger, startBroadcastingAt)
+	listener.Start(ctx, messageChan, newBlockCh, broadcasterLogger, startBroadcastingAt)
 
 	logger.Info("Starting mining")
-	miner.Start(ctx, *generateBlocks, newBlockCh, multiLogger, startBroadcastingAt)
+	miner.Start(ctx, *generateBlocks, newBlockCh, broadcasterLogger, startBroadcastingAt)
 
 	doneChan := make(chan error)
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		err = broadcaster.Start(*txsRate, *limit, multiLogger)
+		err = broadcaster.Start(*txsRate, *limit, broadcasterLogger)
 		doneChan <- err
 	}()
 

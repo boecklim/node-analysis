@@ -14,7 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-type RPCClient interface {
+type Processor interface {
 	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) (err error)
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
 	GenerateBlock() (blockHash string, err error)
@@ -23,7 +23,7 @@ type RPCClient interface {
 }
 
 type Broadcaster struct {
-	client      RPCClient
+	processor   Processor
 	utxoChannel chan TxOut
 
 	cancelAll context.CancelFunc
@@ -38,9 +38,9 @@ const (
 	millisecondsPerSecond = 1000
 )
 
-func NewBroadcaster(client RPCClient) (*Broadcaster, error) {
+func NewBroadcaster(client Processor) (*Broadcaster, error) {
 	b := &Broadcaster{
-		client:      client,
+		processor:   client,
 		utxoChannel: make(chan TxOut, 10100),
 		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
@@ -53,7 +53,7 @@ func NewBroadcaster(client RPCClient) (*Broadcaster, error) {
 }
 
 func (b *Broadcaster) PrepareUtxos(targetUtxos int) (err error) {
-	err = b.client.PrepareUtxos(b.utxoChannel, targetUtxos)
+	err = b.processor.PrepareUtxos(b.utxoChannel, targetUtxos)
 	if err != nil {
 		return fmt.Errorf("failed to prepare utxos: %v", err)
 	}
@@ -93,7 +93,7 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 				return
 			case <-statTicker.C:
 				var mempoolSize uint64
-				mempoolSize, err = b.client.GetMempoolSize()
+				mempoolSize, err = b.processor.GetMempoolSize()
 				if err != nil {
 					logger.Error("Failed to get mempool size", "err", err)
 				}
@@ -104,8 +104,9 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 
 				success := false
 
+				// Try 3 times
 				for range 3 {
-					hash, satoshis, err = b.client.SubmitSelfPayingSingleOutputTx(txOut)
+					hash, satoshis, err = b.processor.SubmitSelfPayingSingleOutputTx(txOut)
 					if err != nil {
 						if errors.Is(err, context.Canceled) {
 							return
@@ -116,7 +117,6 @@ func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger 
 							continue mainLoop
 						}
 
-						//errCh <- err
 						time.Sleep(50 * time.Millisecond)
 						continue
 					}

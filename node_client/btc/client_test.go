@@ -1,4 +1,4 @@
-package node_client
+package btc
 
 import (
 	"github.com/stretchr/testify/require"

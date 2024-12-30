@@ -15,10 +15,10 @@ const (
 )
 
 type Listener struct {
-	rpcClient RPCClient
+	rpcClient Processor
 }
 
-func NewListener(rpcClient RPCClient) *Listener {
+func NewListener(rpcClient Processor) *Listener {
 	l := &Listener{
 		rpcClient: rpcClient,
 	}

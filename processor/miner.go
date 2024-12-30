@@ -9,12 +9,12 @@ import (
 )
 
 type Client struct {
-	client   RPCClient
+	client   Processor
 	shutdown chan struct{}
 }
 
 // NewMiner creates a new simulated miner
-func NewMiner(client RPCClient) *Client {
+func NewMiner(client Processor) *Client {
 	c := &Client{
 		client:   client,
 		shutdown: make(chan struct{}, 1),

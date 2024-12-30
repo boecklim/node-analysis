@@ -2,9 +2,14 @@ package node_client
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/libsv/go-bk/bec"
+	chaincfg2 "github.com/libsv/go-bk/chaincfg"
+	"github.com/libsv/go-bk/wif"
+	"github.com/libsv/go-bt/v2/bscript"
 	"log/slog"
 	"math"
 	"strings"
@@ -17,6 +22,8 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/libsv/go-bt/v2"
+	"github.com/libsv/go-bt/v2/unlocker"
 )
 
 const (
@@ -27,7 +34,7 @@ const (
 	fee                        = 3000
 )
 
-var _ processor.RPCClient = &Processor{}
+var _ processor.Processor = &Processor{}
 
 type GetMiningInfoResult struct {
 	Blocks             int64   `json:"blocks"`
@@ -77,7 +84,7 @@ type GetNetworkInfoResult struct {
 	RelayFee        float64                `json:"relayfee"`
 	IncrementalFee  float64                `json:"incrementalfee"`
 	LocalAddresses  []LocalAddressesResult `json:"localaddresses"`
-	Warnings        StringOrArray          `json:"warnings"`
+	//Warnings        StringOrArray          `json:"warnings"`
 }
 
 type StringOrArray []string
@@ -116,6 +123,7 @@ type ScriptPubKeyResult struct {
 type RPCClient interface {
 	GenerateToAddress(nBlocks int64, address string) ([]string, error)
 	GetMiningInfo() (*GetMiningInfoResult, error)
+	GetNetworkInfo() (*GetNetworkInfoResult, error)
 	GetBlock(blockHash string) (*GetBlockVerboseResult, error)
 	GetBlockHash(blockHeight int64) (*string, error)
 	GetTxOut(txHash string, index uint32, mempool bool) (*GetTxOutResult, error)
@@ -124,26 +132,65 @@ type RPCClient interface {
 }
 
 type Processor struct {
-	client RPCClient
-	logger *slog.Logger
-
+	client   RPCClient
+	logger   *slog.Logger
+	isBSV    bool
 	pkScript []byte
-	address  btcutil.Address
-	privKey  *btcec.PrivateKey
+
+	addressBSV bscript.Address
+	privKeyBSV *bec.PrivateKey
+
+	addressString string
+
+	address btcutil.Address
+	privKey *btcec.PrivateKey
 }
 
-func NewProcessor(client RPCClient, logger *slog.Logger) (*Processor, error) {
+func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor, error) {
 	p := &Processor{
 		client: client,
 		logger: logger,
+		isBSV:  isBSV,
 	}
 
-	err := p.setAddress()
-	if err != nil {
-		return nil, err
+	if isBSV {
+		err := p.setAddressBSV()
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err := p.setAddress()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return p, nil
+}
+
+func (p *Processor) setAddressBSV() error {
+	privKey, err := bec.NewPrivateKey(bec.S256())
+	if err != nil {
+		return err
+	}
+
+	newWif, err := wif.NewWIF(privKey, &chaincfg2.TestNet, false)
+	if err != nil {
+		return err
+	}
+
+	address, err := bscript.NewAddressFromPublicKey(newWif.PrivKey.PubKey(), false)
+	if err != nil {
+		return err
+	}
+
+	p.addressBSV = *address
+	p.privKeyBSV = newWif.PrivKey
+	p.addressString = address.AddressString
+
+	//fundingScript, _ := bscript.NewP2PKHFromAddress(fundingAddr.AddressString)
+
+	return nil
 }
 
 func (p *Processor) setAddress() error {
@@ -163,8 +210,9 @@ func (p *Processor) setAddress() error {
 
 	p.address = address
 	p.privKey = privKey
+	p.addressString = address.EncodeAddress()
 
-	p.logger.Info("New address", "address", address.EncodeAddress())
+	p.logger.Info("New address", "address", p.addressString)
 
 	pkScript, err := txscript.PayToAddrScript(p.address)
 	if err != nil {
@@ -183,7 +231,7 @@ func (p *Processor) getCoinbaseTxOut() (*processor.TxOut, error) {
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
-		bhs, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
+		bhs, err := p.client.GenerateToAddress(1, p.addressString)
 		if err != nil {
 			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -256,32 +304,35 @@ func getHexString(tx *wire.MsgTx) (string, error) {
 }
 
 func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
-	tx, err := p.createSelfPayingTx(txOut)
+	var txResult *selfPayingResult
+
+	if p.isBSV {
+		txResult, err = p.createSelfPayingTxBSV(txOut)
+	} else {
+		txResult, err = p.createSelfPayingTx(txOut)
+	}
 	if err != nil {
 		return nil, 0, err
 	}
 
-	hexString, err := getHexString(tx)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	hash, err := p.client.SendRawTransaction(hexString)
+	_, err = p.client.SendRawTransaction(txResult.hexString)
 	if err != nil {
 		if strings.Contains(err.Error(), "Transaction outputs already in utxo set") {
-			p.logger.Error("Submitting tx failed", "txOut.hash", txOut.Hash.String(), "txOut.value", txOut.ValueSat, "txOut.vout", txOut.VOut, "hash", tx.TxID(), "err", err)
+			p.logger.Error("Submitting tx failed", "txOut.hash", txOut.Hash.String(), "txOut.value", txOut.ValueSat, "txOut.vout", txOut.VOut, "hash", txResult.hash.String(), "err", err)
 		}
 		return nil, 0, err
 	}
 
-	txHash, err = chainhash.NewHashFromStr(*hash)
-	if err != nil {
-		return nil, 0, err
-	}
-	return txHash, tx.TxOut[0].Value, nil
+	return txResult.hash, txResult.satoshis, nil
 }
 
-func (p *Processor) createSelfPayingTx(txOut processor.TxOut) (*wire.MsgTx, error) {
+type selfPayingResult struct {
+	hash      *chainhash.Hash
+	satoshis  int64
+	hexString string
+}
+
+func (p *Processor) createSelfPayingTx(txOut processor.TxOut) (*selfPayingResult, error) {
 	if txOut.Hash == nil {
 		return nil, fmt.Errorf("hash is missing")
 	}
@@ -313,7 +364,60 @@ func (p *Processor) createSelfPayingTx(txOut processor.TxOut) (*wire.MsgTx, erro
 
 	p.logger.Debug("tx created", "hash", tx.TxID())
 
-	return tx, nil
+	hexString, err := getHexString(tx)
+	if err != nil {
+		return nil, err
+	}
+
+	txHash := tx.TxHash()
+
+	return &selfPayingResult{
+		hash:      &txHash,
+		satoshis:  tx.TxOut[0].Value,
+		hexString: hexString,
+	}, nil
+}
+
+func (p *Processor) createSelfPayingTxBSV(txOut processor.TxOut) (*selfPayingResult, error) {
+	if txOut.Hash == nil {
+		return nil, fmt.Errorf("hash is missing")
+	}
+
+	p.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
+
+	tx := bt.NewTx()
+
+	err := tx.From(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))
+	if err != nil {
+		return nil, err
+	}
+
+	amount := txOut.ValueSat
+	amount -= fee
+
+	err = tx.PayToAddress(p.addressString, uint64(amount))
+	if err != nil {
+		return nil, err
+	}
+
+	err = tx.FillAllInputs(context.Background(), &unlocker.Getter{PrivateKey: p.privKeyBSV})
+	if err != nil {
+		return nil, err
+	}
+
+	p.logger.Debug("tx created", "hash", tx.TxID())
+
+	txHash, err := chainhash.NewHashFromStr(tx.TxID())
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &selfPayingResult{
+		hash:      txHash,
+		satoshis:  int64(tx.Outputs[0].Satoshis),
+		hexString: tx.String(),
+	}, nil
 }
 
 func (p *Processor) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
@@ -349,7 +453,7 @@ func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos i
 		for {
 			select {
 			case <-showTicker.C:
-				p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
+				//p.logger.Info("Creating utxos", slog.Int("count", len(utxoChannel)), slog.Int("target", targetUtxos))
 			case <-signalFinish:
 				return
 			}
@@ -360,7 +464,7 @@ func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos i
 		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
 		p.logger.Info("Generating blocks", "number", blocksToGenerate)
 
-		_, err = p.client.GenerateToAddress(blocksToGenerate, p.address.EncodeAddress())
+		_, err = p.client.GenerateToAddress(blocksToGenerate, p.addressString)
 		if err != nil {
 			return fmt.Errorf("failed to gnereate to address: %v", err)
 		}
@@ -375,18 +479,18 @@ outerLoop:
 
 		p.logger.Debug("Splittable output", "hash", rootTxOut.Hash.String(), "value", rootTxOut.ValueSat)
 
-		rootTx, err := p.splitToAddress(rootTxOut, outputsPerTx)
+		var rootSplitResult splitResult
+		if p.isBSV {
+			rootSplitResult, err = p.splitToAddressBSV(rootTxOut, outputsPerTx)
+		} else {
+			rootSplitResult, err = p.splitToAddress(rootTxOut, outputsPerTx)
+		}
 		if err != nil {
 			return fmt.Errorf("failed split to address: %v", err)
 		}
 
-		rootHexString, err := getHexString(rootTx)
-		if err != nil {
-			return err
-		}
-
 		var sentTxHash *string
-		sentTxHash, err = p.client.SendRawTransaction(rootHexString)
+		sentTxHash, err = p.client.SendRawTransaction(rootSplitResult.hexString)
 		if err != nil {
 			if strings.Contains(err.Error(), "mandatory-script-verify-flag-failed") {
 				p.logger.Error("Failed to send root tx", "err", err)
@@ -397,36 +501,35 @@ outerLoop:
 			return fmt.Errorf("failed to send root tx: %v", err)
 		}
 
-		p.logger.Debug("Sent root tx", "hash", *sentTxHash, "outputs", len(rootTx.TxOut))
-
-		rootTxHash := rootTx.TxHash()
+		p.logger.Debug("Sent root tx", "hash", *sentTxHash, "outputs", len(rootSplitResult.outputs))
 
 		var splitTxOut *processor.TxOut
 
-		for rootIndex, rootOutput := range rootTx.TxOut {
+		for rootIndex, rootOutput := range rootSplitResult.outputs {
 			splitTxOut = &processor.TxOut{
-				Hash:            &rootTxHash,
+				Hash:            rootSplitResult.hash,
 				ValueSat:        rootOutput.Value,
-				ScriptPubKeyHex: hex.EncodeToString(rootOutput.PkScript),
+				ScriptPubKeyHex: rootOutput.PkScript,
 				VOut:            uint32(rootIndex),
 			}
 
-			splitTx1, err := p.splitToAddress(splitTxOut, outputsPerTx)
+			var splitTxSplitResult splitResult
+			if p.isBSV {
+				splitTxSplitResult, err = p.splitToAddressBSV(splitTxOut, outputsPerTx)
+			} else {
+				splitTxSplitResult, err = p.splitToAddress(splitTxOut, outputsPerTx)
+			}
 			if err != nil {
 				continue
 			}
 
-			splitHexString, err := getHexString(splitTx1)
-			if err != nil {
-				return err
-			}
-			splitTxHash, err := p.client.SendRawTransaction(splitHexString)
+			splitTxHash, err := p.client.SendRawTransaction(splitTxSplitResult.hexString)
 			if err != nil {
 				return fmt.Errorf("failed to send splitTx1 tx: %v", err)
 			}
 
-			p.logger.Debug("Sent split tx", "hash", splitTx1.TxID(), "outputs", len(splitTx1.TxOut))
-			for index, output := range splitTx1.TxOut {
+			p.logger.Debug("Sent split tx", "hash", splitTxSplitResult.hash.String(), "outputs", len(splitTxSplitResult.outputs))
+			for index, output := range splitTxSplitResult.outputs {
 				if len(utxoChannel) >= targetUtxos {
 					break outerLoop
 				}
@@ -438,7 +541,7 @@ outerLoop:
 
 				utxoChannel <- processor.TxOut{
 					Hash:            splitTxHashString,
-					ScriptPubKeyHex: hex.EncodeToString(output.PkScript),
+					ScriptPubKeyHex: output.PkScript,
 					ValueSat:        output.Value,
 					VOut:            uint32(index),
 				}
@@ -446,7 +549,7 @@ outerLoop:
 		}
 	}
 
-	bhs, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
+	bhs, err := p.client.GenerateToAddress(1, p.addressString)
 	if err != nil {
 		return fmt.Errorf("failed to gnereate to address: %v", err)
 	}
@@ -460,7 +563,70 @@ outerLoop:
 	return nil
 }
 
-func (p *Processor) splitToAddress(txOut *processor.TxOut, outputs int) (*wire.MsgTx, error) {
+type splitOutput struct {
+	PkScript string
+	Value    int64
+}
+
+type splitResult struct {
+	outputs   []splitOutput
+	hexString string
+	hash      *chainhash.Hash
+}
+
+func (p *Processor) splitToAddressBSV(txOut *processor.TxOut, outputs int) (res splitResult, err error) {
+	tx := bt.NewTx()
+
+	err = tx.From(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	remainingSat := txOut.ValueSat
+
+	satPerOutput := int64(math.Floor(float64(txOut.ValueSat) / float64(outputs+1)))
+
+	for range outputs {
+		err = tx.PayToAddress(p.addressString, uint64(satPerOutput))
+		if err != nil {
+			return splitResult{}, err
+		}
+		remainingSat -= satPerOutput
+	}
+
+	err = tx.PayToAddress(p.addressString, uint64(remainingSat-fee))
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	err = tx.FillAllInputs(context.Background(), &unlocker.Getter{PrivateKey: p.privKeyBSV})
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	splitOutputs := make([]splitOutput, len(tx.Outputs))
+	for i, output := range tx.Outputs {
+		splitOutputs[i] = splitOutput{
+			PkScript: output.LockingScript.String(),
+			Value:    int64(output.Satoshis),
+		}
+	}
+
+	hash, err := chainhash.NewHashFromStr(tx.TxID())
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	result := splitResult{
+		hash:      hash,
+		outputs:   splitOutputs,
+		hexString: tx.String(),
+	}
+
+	return result, nil
+}
+
+func (p *Processor) splitToAddress(txOut *processor.TxOut, outputs int) (res splitResult, err error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	prevOut := wire.NewOutPoint(txOut.Hash, txOut.VOut)
@@ -469,7 +635,7 @@ func (p *Processor) splitToAddress(txOut *processor.TxOut, outputs int) (*wire.M
 
 	pkScript, err := txscript.PayToAddrScript(p.address)
 	if err != nil {
-		return nil, err
+		return splitResult{}, err
 	}
 
 	remainingSat := txOut.ValueSat
@@ -489,22 +655,46 @@ func (p *Processor) splitToAddress(txOut *processor.TxOut, outputs int) (*wire.M
 
 	pkScriptOrig, err := hex.DecodeString(txOut.ScriptPubKeyHex)
 	if err != nil {
-		return nil, err
+		return splitResult{}, err
 	}
 
 	sigScript, err := txscript.SignTxOutput(&chaincfg.RegressionNetParams,
 		tx, 0, pkScriptOrig, txscript.SigHashAll,
 		txscript.KeyClosure(lookupKey), nil, nil)
 	if err != nil {
-		return nil, err
+		return splitResult{}, err
 	}
 	tx.TxIn[0].SignatureScript = sigScript
 
-	return tx, nil
+	hexString, err := getHexString(tx)
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	splitOutputs := make([]splitOutput, len(tx.TxOut))
+	for i, output := range tx.TxOut {
+		splitOutputs[i] = splitOutput{
+			PkScript: hex.EncodeToString(output.PkScript),
+			Value:    output.Value,
+		}
+	}
+
+	hash, err := chainhash.NewHashFromStr(tx.TxID())
+	if err != nil {
+		return splitResult{}, err
+	}
+
+	result := splitResult{
+		hash:      hash,
+		outputs:   splitOutputs,
+		hexString: hexString,
+	}
+
+	return result, nil
 }
 
 func (p *Processor) GenerateBlock() (blockHash string, err error) {
-	blockHashes, err := p.client.GenerateToAddress(1, p.address.EncodeAddress())
+	blockHashes, err := p.client.GenerateToAddress(1, p.addressString)
 	if err != nil {
 		return "", err
 	}
