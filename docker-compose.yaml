@@ -7,6 +7,7 @@ services:
       - "29000:29000"
     expose:
       - "18444"
+      - "18443"
     healthcheck:
       test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
     volumes:
@@ -17,17 +18,33 @@ services:
   node2:
     container_name: node2
     image: bitcoinsv/bitcoin-sv:1.1.0
-#    ports:
-#      - "18333:18332"
-#      - "28333:28332"
     expose:
       - "18444"
+      - "18443"
     healthcheck:
       test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
     volumes:
       - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
       - node2-data:/data
     command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444" ]
+
+  broadcaster1:
+    build: ./
+    command: [ "./broadcaster", "-host=node1", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+
+  broadcaster2:
+    build: ./
+    command: [ "./broadcaster", "-host=node2", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
 
 volumes:
   node1-data:

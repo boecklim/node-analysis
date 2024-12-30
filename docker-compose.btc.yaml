@@ -1,0 +1,53 @@
+services:
+  node1:
+    container_name: node1
+    image: bitcoin/bitcoin:28.0
+    ports:
+      - "18443:18443"
+      - "29000:29000"
+    expose:
+      - "18444"
+      - "18443"
+    healthcheck:
+      test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "-rpcuser=bitcoin", "-rpcpassword=bitcoin", "-rpcport=18443", "getmininginfo" ]
+    volumes:
+      - ./config/btc/bitcoin.conf:/data/bitcoin.conf
+      - node1-data:/data
+    command: [ "/entrypoint.sh", "bitcoind", "-conf=/data/bitcoin.conf", "-connect=node2:18444" ]
+
+  node2:
+    container_name: node2
+    image: bitcoin/bitcoin:28.0
+    expose:
+      - "18444"
+      - "18443"
+    healthcheck:
+      test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "-rpcuser=bitcoin", "-rpcpassword=bitcoin", "-rpcport=18443", "getmininginfo" ]
+    volumes:
+      - ./config/btc/bitcoin.conf:/data/bitcoin.conf
+      - node2-data:/data
+    command: [ "/entrypoint.sh", "bitcoind", "-conf=/data/bitcoin.conf", "-connect=node1:18444" ]
+
+  broadcaster1:
+    build: ./
+    command: [ "./broadcaster", "-host=node1", "-blockchain=btc", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+
+  broadcaster2:
+    build: ./
+    command: [ "./broadcaster", "-host=node2", "-blockchain=btc", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+
+volumes:
+  node1-data:
+    external: false
+  node2-data:
+    external: false
