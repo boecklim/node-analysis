@@ -2,37 +2,30 @@ package node_client
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
+	"math/rand"
 	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
-	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/libsv/go-bk/bec"
-	chaincfgSV "github.com/libsv/go-bk/chaincfg"
-	"github.com/libsv/go-bk/wif"
-	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/bscript"
-	"github.com/libsv/go-bt/v2/unlocker"
 
 	"github.com/boecklim/node-analysis/pkg/processor"
 )
 
 const (
-	coinBaseVout               = 0
-	satPerBtc                  = 1e8
-	coinbaseSpendableAfterConf = 100
-	outputsPerTx               = 20
-	fee                        = 3000
+	coinBaseVout    = 0
+	satPerBtc       = 1e8
+	outputsPerTx    = 20
+	fee             = 3000
+	blocksGenerated = 200
 )
 
 var _ processor.Processor = &Processor{}
@@ -104,7 +97,6 @@ type NetworksResult struct {
 	ProxyRandomizeCredentials bool   `json:"proxy_randomize_credentials"`
 }
 
-// GetTxOutResult models the data from the gettxout command.
 type GetTxOutResult struct {
 	BestBlock     string             `json:"bestblock"`
 	Confirmations int64              `json:"confirmations"`
@@ -138,6 +130,9 @@ type Processor struct {
 	isBSV    bool
 	pkScript []byte
 
+	splitToAddressFunc     func(txOut *processor.TxOut, outputs int) (res splitResult, err error)
+	createSelfPayingTxFunc func(txOut processor.TxOut) (*selfPayingResult, error)
+
 	addressBSV bscript.Address
 	privKeyBSV *bec.PrivateKey
 
@@ -159,11 +154,15 @@ func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor
 		if err != nil {
 			return nil, err
 		}
+		p.splitToAddressFunc = p.splitToAddressBSV
+		p.createSelfPayingTxFunc = p.createSelfPayingTxBSV
 	} else {
-		err := p.setAddress()
+		err := p.setAddressBTC()
 		if err != nil {
 			return nil, err
 		}
+		p.splitToAddressFunc = p.splitToAddressBTC
+		p.createSelfPayingTxFunc = p.createSelfPayingTxBTC
 	}
 
 	return p, nil
@@ -177,25 +176,19 @@ func (p *Processor) getCoinbaseTxOut() (*processor.TxOut, error) {
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
-		bhs, err := p.client.GenerateToAddress(1, p.addressString)
-		if err != nil {
-			return nil, fmt.Errorf("failed to gnereate to address: %v", err)
-		}
-		p.logger.Info("Generated new block", "hash", bhs[0])
-
 		if counter > 10 {
 			return nil, errors.New("failed to find coinbase tx out")
 		}
 
-		blockHeight, err := p.getBlockHeight()
+		currentBlockHeight, err := p.getBlockHeight()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get info: %v", err)
 		}
 
-		bh := blockHeight - coinbaseSpendableAfterConf
-		blockHash, err := p.client.GetBlockHash(bh)
+		randomHeightOfGeneratedBlock := currentBlockHeight - blocksGenerated + int64(rand.Intn(100))
+		blockHash, err := p.client.GetBlockHash(randomHeightOfGeneratedBlock)
 		if err != nil {
-			return nil, fmt.Errorf("failed go get block hash at height %d: %v", bh, err)
+			return nil, fmt.Errorf("failed go get block hash at height %d: %v", randomHeightOfGeneratedBlock, err)
 		}
 
 		block, err := p.client.GetBlock(*blockHash)
@@ -250,13 +243,7 @@ func getHexString(tx *wire.MsgTx) (string, error) {
 }
 
 func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
-	var txResult *selfPayingResult
-
-	if p.isBSV {
-		txResult, err = p.createSelfPayingTxBSV(txOut)
-	} else {
-		txResult, err = p.createSelfPayingTx(txOut)
-	}
+	txResult, err := p.createSelfPayingTxFunc(txOut)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -297,11 +284,6 @@ func (p *Processor) GetMempoolSize() (nrTxs uint64, err error) {
 }
 
 func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
-	blocks, err := p.getBlockHeight()
-	if err != nil {
-		return fmt.Errorf("failed to get info: %v", err)
-	}
-
 	signalFinish := make(chan struct{})
 	loggingStopped := make(chan struct{})
 	showTicker := time.NewTicker(2 * time.Second)
@@ -318,14 +300,9 @@ func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos i
 		}
 	}()
 
-	if blocks <= coinbaseSpendableAfterConf {
-		blocksToGenerate := coinbaseSpendableAfterConf + 1 - blocks
-		p.logger.Info("Generating blocks", "number", blocksToGenerate)
-
-		_, err = p.client.GenerateToAddress(blocksToGenerate, p.addressString)
-		if err != nil {
-			return fmt.Errorf("failed to gnereate to address: %v", err)
-		}
+	_, err = p.client.GenerateToAddress(blocksGenerated, p.addressString)
+	if err != nil {
+		return fmt.Errorf("failed to gnereate to address: %v", err)
 	}
 outerLoop:
 	for len(utxoChannel) < targetUtxos {
@@ -337,12 +314,8 @@ outerLoop:
 
 		p.logger.Debug("Splittable output", "hash", rootTxOut.Hash.String(), "value", rootTxOut.ValueSat)
 
-		var rootSplitResult splitResult
-		if p.isBSV {
-			rootSplitResult, err = p.splitToAddressBSV(rootTxOut, outputsPerTx)
-		} else {
-			rootSplitResult, err = p.splitToAddress(rootTxOut, outputsPerTx)
-		}
+		rootSplitResult, err := p.splitToAddressFunc(rootTxOut, outputsPerTx)
+
 		if err != nil {
 			return fmt.Errorf("failed split to address: %v", err)
 		}
@@ -371,12 +344,7 @@ outerLoop:
 				VOut:            uint32(rootIndex),
 			}
 
-			var splitTxSplitResult splitResult
-			if p.isBSV {
-				splitTxSplitResult, err = p.splitToAddressBSV(splitTxOut, outputsPerTx)
-			} else {
-				splitTxSplitResult, err = p.splitToAddress(splitTxOut, outputsPerTx)
-			}
+			splitTxSplitResult, err := p.splitToAddressFunc(splitTxOut, outputsPerTx)
 			if err != nil {
 				continue
 			}

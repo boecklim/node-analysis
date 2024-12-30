@@ -7,16 +7,15 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
-	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"time"
 
-	"github.com/boecklim/node-analysis/pkg/node_client"
 	"github.com/lmittmann/tint"
 	slogmulti "github.com/samber/slog-multi"
 
+	"github.com/boecklim/node-analysis/pkg/node_client"
 	"github.com/boecklim/node-analysis/pkg/processor"
 	"github.com/boecklim/node-analysis/pkg/zmq"
 )
@@ -80,6 +79,11 @@ func run() error {
 		return errors.New("limit not given")
 	}
 
+	wait := flag.Duration("wait", 0*time.Second, "time to wait before utxo preparation")
+	if wait == nil {
+		return errors.New("wait not given")
+	}
+
 	generateBlocks := flag.Duration("gen-blocks", 0, "time interval in which to generate a new block - for value 0 no blocks are going to be generated. Valid time units are s, m, h")
 	if generateBlocks == nil {
 		return errors.New("generate block interval not given")
@@ -98,7 +102,7 @@ func run() error {
 
 	var startBroadcastingAt time.Time
 	if *startAt == "" {
-		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(15 * time.Second)
+		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(30 * time.Second)
 	} else {
 		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
 		if err != nil {
@@ -189,11 +193,9 @@ func run() error {
 		return err
 	}
 
-	waitTime := time.Duration(rand.Intn(1000)) * time.Millisecond
+	logger.Info("waiting for utxo preparation to start", "wait", *wait)
 
-	logger.Info("waiting for broadcaster to start", "wait", waitTime)
-
-	time.Sleep(waitTime)
+	time.Sleep(*wait)
 
 	logger.Info("Preparing utxos")
 	err = broadcaster.PrepareUtxos(10000)

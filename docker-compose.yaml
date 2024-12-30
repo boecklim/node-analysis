@@ -30,7 +30,7 @@ services:
 
   broadcaster1:
     build: ./
-    command: [ "./broadcaster", "-host=node1", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    command: [ "./broadcaster", "-host=node1", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s", "-wait=0s" ]
     depends_on:
       node1:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
 
   broadcaster2:
     build: ./
-    command: [ "./broadcaster", "-host=node2", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s" ]
+    command: [ "./broadcaster", "-host=node2", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s", "-wait=10s"]
     depends_on:
       node1:
         condition: service_healthy
