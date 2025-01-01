@@ -14,64 +14,6 @@ import (
 	"github.com/boecklim/node-analysis/pkg/processor"
 )
 
-//
-//func (p *Processor) createSelfPayingTxBTC(txOut *processor.TxOut) (*selfPayingResult, error) {
-//	if txOut.Hash == nil {
-//		return nil, fmt.Errorf("hash is missing")
-//	}
-//
-//	p.logger.Debug("creating tx", "prev tx hash", txOut.Hash.String(), "vout", txOut.VOut)
-//
-//	tx := wire.NewMsgTx(wire.TxVersion)
-//	amount := txOut.ValueSat
-//
-//	prevOut := wire.NewOutPoint(txOut.Hash, txOut.VOut)
-//	input := wire.NewTxIn(prevOut, nil, nil)
-//
-//	tx.AddTxIn(input)
-//
-//	amount -= fee
-//
-//	address, err := btcutil.NewAddressPubKey(p.privKey.PubKey().SerializeCompressed(),
-//		&chaincfg.RegressionNetParams)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	pkScript, err := txscript.PayToAddrScript(address)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	tx.AddTxOut(wire.NewTxOut(amount, pkScript))
-//
-//	lookupKey := func(_ btcutil.Address) (*btcec.PrivateKey, bool, error) {
-//		return p.privKey, true, nil
-//	}
-//	sigScript, err := txscript.SignTxOutput(&chaincfg.RegressionNetParams,
-//		tx, 0, pkScript, txscript.SigHashAll,
-//		txscript.KeyClosure(lookupKey), nil, nil)
-//	if err != nil {
-//		return nil, err
-//	}
-//	tx.TxIn[0].SignatureScript = sigScript
-//
-//	p.logger.Debug("tx created", "hash", tx.TxID())
-//
-//	hexString, err := getHexString(tx)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	txHash := tx.TxHash()
-//
-//	return &selfPayingResult{
-//		hash:      &txHash,
-//		satoshis:  tx.TxOut[0].Value,
-//		hexString: hexString,
-//	}, nil
-//}
-
 func (p *Processor) splitToAddressBTC(txOut *processor.TxOut, outputs int) (res *splitResult, err error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
@@ -89,11 +31,6 @@ func (p *Processor) splitToAddressBTC(txOut *processor.TxOut, outputs int) (res 
 	if err != nil {
 		return nil, err
 	}
-
-	//pkScript, err := txscript.PayToAddrScript(p.address)
-	//if err != nil {
-	//	return nil, err
-	//}
 
 	remainingSat := txOut.ValueSat
 

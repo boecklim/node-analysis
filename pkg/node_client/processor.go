@@ -123,19 +123,12 @@ type RPCClient interface {
 }
 
 type Processor struct {
-	client RPCClient
-	logger *slog.Logger
-	isBSV  bool
-	//pkScript []byte
-
+	client             RPCClient
+	logger             *slog.Logger
+	isBSV              bool
 	splitToAddressFunc func(txOut *processor.TxOut, outputs int) (res *splitResult, err error)
-	//createSelfPayingTxFunc func(txOut *processor.TxOut) (*selfPayingResult, error)
-
-	//privKeyBSV *bec.PrivateKey
-
-	addressString string
-	//address btcutil.Address
-	privKey *btcec.PrivateKey
+	addressString      string
+	privKey            *btcec.PrivateKey
 }
 
 func (p *Processor) setAddress() error {
@@ -153,18 +146,11 @@ func (p *Processor) setAddress() error {
 		return err
 	}
 
-	//p.address = address
 	p.privKey = privKey
 	p.addressString = address.EncodeAddress()
 
 	p.logger.Info("New address", "address", p.addressString)
 
-	//pkScript, err := txscript.PayToAddrScript(p.address)
-	//if err != nil {
-	//	return err
-	//}
-
-	//p.pkScript = pkScript
 	return nil
 }
 
@@ -180,15 +166,9 @@ func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor
 		return nil, err
 	}
 	if isBSV {
-		//err := p.setAddressBSV()
-		//if err != nil {
-		//	return nil, err
-		//}
 		p.splitToAddressFunc = p.splitToAddressBSV
-		//p.createSelfPayingTxFunc = p.createSelfPayingTxBSV
 	} else {
 		p.splitToAddressFunc = p.splitToAddressBTC
-		//p.createSelfPayingTxFunc = p.createSelfPayingTxBTC
 	}
 
 	return p, nil
