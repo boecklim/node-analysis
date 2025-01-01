@@ -10,14 +10,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/boecklim/node-analysis/pkg/processor"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/libsv/go-bk/bec"
-	"github.com/libsv/go-bt/v2/bscript"
-
-	"github.com/boecklim/node-analysis/pkg/processor"
 )
 
 const (
@@ -125,21 +123,49 @@ type RPCClient interface {
 }
 
 type Processor struct {
-	client   RPCClient
-	logger   *slog.Logger
-	isBSV    bool
-	pkScript []byte
+	client RPCClient
+	logger *slog.Logger
+	isBSV  bool
+	//pkScript []byte
 
-	splitToAddressFunc     func(txOut *processor.TxOut, outputs int) (res splitResult, err error)
-	createSelfPayingTxFunc func(txOut processor.TxOut) (*selfPayingResult, error)
+	splitToAddressFunc func(txOut *processor.TxOut, outputs int) (res *splitResult, err error)
+	//createSelfPayingTxFunc func(txOut *processor.TxOut) (*selfPayingResult, error)
 
-	addressBSV bscript.Address
-	privKeyBSV *bec.PrivateKey
+	//privKeyBSV *bec.PrivateKey
 
 	addressString string
-
-	address btcutil.Address
+	//address btcutil.Address
 	privKey *btcec.PrivateKey
+}
+
+func (p *Processor) setAddress() error {
+	var err error
+	var privKey *btcec.PrivateKey
+
+	privKey, err = btcec.NewPrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed to create private key: %w", err)
+	}
+
+	address, err := btcutil.NewAddressPubKey(privKey.PubKey().SerializeCompressed(),
+		&chaincfg.RegressionNetParams)
+	if err != nil {
+		return err
+	}
+
+	//p.address = address
+	p.privKey = privKey
+	p.addressString = address.EncodeAddress()
+
+	p.logger.Info("New address", "address", p.addressString)
+
+	//pkScript, err := txscript.PayToAddrScript(p.address)
+	//if err != nil {
+	//	return err
+	//}
+
+	//p.pkScript = pkScript
+	return nil
 }
 
 func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor, error) {
@@ -149,20 +175,20 @@ func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor
 		isBSV:  isBSV,
 	}
 
+	err := p.setAddress()
+	if err != nil {
+		return nil, err
+	}
 	if isBSV {
-		err := p.setAddressBSV()
-		if err != nil {
-			return nil, err
-		}
+		//err := p.setAddressBSV()
+		//if err != nil {
+		//	return nil, err
+		//}
 		p.splitToAddressFunc = p.splitToAddressBSV
-		p.createSelfPayingTxFunc = p.createSelfPayingTxBSV
+		//p.createSelfPayingTxFunc = p.createSelfPayingTxBSV
 	} else {
-		err := p.setAddressBTC()
-		if err != nil {
-			return nil, err
-		}
 		p.splitToAddressFunc = p.splitToAddressBTC
-		p.createSelfPayingTxFunc = p.createSelfPayingTxBTC
+		//p.createSelfPayingTxFunc = p.createSelfPayingTxBTC
 	}
 
 	return p, nil
@@ -172,7 +198,7 @@ func (p *Processor) getCoinbaseTxOut() (*processor.TxOut, error) {
 	var txOut *GetTxOutResult
 	var txHash string
 
-	counter := 0
+	var counter int64 = 0
 
 	// Find a coinbase tx out which has not been spent yet
 	for {
@@ -243,7 +269,7 @@ func getHexString(tx *wire.MsgTx) (string, error) {
 }
 
 func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
-	txResult, err := p.createSelfPayingTxFunc(txOut)
+	txResult, err := p.splitToAddressFunc(&txOut, 0)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -256,7 +282,7 @@ func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHas
 		return nil, 0, err
 	}
 
-	return txResult.hash, txResult.satoshis, nil
+	return txResult.hash, txResult.outputs[0].satoshis, nil
 }
 
 type selfPayingResult struct {
@@ -315,9 +341,9 @@ outerLoop:
 		p.logger.Debug("Splittable output", "hash", rootTxOut.Hash.String(), "value", rootTxOut.ValueSat)
 
 		rootSplitResult, err := p.splitToAddressFunc(rootTxOut, outputsPerTx)
-
 		if err != nil {
-			return fmt.Errorf("failed split to address: %v", err)
+			p.logger.Error("failed to split to address", "err", err)
+			continue
 		}
 
 		var sentTxHash *string
@@ -339,13 +365,14 @@ outerLoop:
 		for rootIndex, rootOutput := range rootSplitResult.outputs {
 			splitTxOut = &processor.TxOut{
 				Hash:            rootSplitResult.hash,
-				ValueSat:        rootOutput.Value,
-				ScriptPubKeyHex: rootOutput.PkScript,
+				ValueSat:        rootOutput.satoshis,
+				ScriptPubKeyHex: rootOutput.pkScript,
 				VOut:            uint32(rootIndex),
 			}
 
 			splitTxSplitResult, err := p.splitToAddressFunc(splitTxOut, outputsPerTx)
 			if err != nil {
+				p.logger.Error("failed to split to address", "err", err)
 				continue
 			}
 
@@ -367,8 +394,8 @@ outerLoop:
 
 				utxoChannel <- processor.TxOut{
 					Hash:            splitTxHashString,
-					ScriptPubKeyHex: output.PkScript,
-					ValueSat:        output.Value,
+					ScriptPubKeyHex: output.pkScript,
+					ValueSat:        output.satoshis,
 					VOut:            uint32(index),
 				}
 			}
@@ -390,8 +417,8 @@ outerLoop:
 }
 
 type splitOutput struct {
-	PkScript string
-	Value    int64
+	pkScript string
+	satoshis int64
 }
 
 type splitResult struct {
