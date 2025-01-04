@@ -1,25 +1,25 @@
 
-.PHONY: run-bsv
-run-bsv:
-	docker-compose down -v --remove-orphans
-	docker-compose up node1 node2
+.PHONY: run-bsv-nodes
+run-bsv-nodes:
+	docker compose -f ./docker-compose.bsv.yaml down -v --remove-orphans
+	docker compose -f ./docker-compose.bsv.yaml up node1 node2
 
-.PHONY: run-btc
-run-btc:
-	docker-compose -f ./docker-compose.btc.yaml down -v --remove-orphans
-	docker-compose -f ./docker-compose.btc.yaml up node1 node2
+.PHONY: run-btc-nodes
+run-btc-nodes:
+	docker compose -f ./docker-compose.btc.yaml down -v --remove-orphans
+	docker compose -f ./docker-compose.btc.yaml up node1 node2
 
-.PHONY: run-tests-btc
-run-tests-btc:
-	docker-compose -f ./docker-compose.btc.yaml down -v --remove-orphans
-	docker-compose -f ./docker-compose.btc.yaml up --abort-on-container-exit --build broadcaster1 broadcaster2
-	docker-compose -f ./docker-compose.btc.yaml down
+.PHONY: run-btc-nodes-with-broadcaster
+run-btc-nodes-with-broadcaster:
+	docker compose -f ./docker-compose.btc.yaml down -v --remove-orphans
+	docker compose -f ./docker-compose.btc.yaml up --build broadcaster1 broadcaster2
+	docker compose -f ./docker-compose.btc.yaml down
 
-.PHONY: run-tests-bsv
-run-tests-bsv:
-	docker-compose down -v --remove-orphans
-	docker-compose up --abort-on-container-exit --build broadcaster1 broadcaster2
-	docker-compose down
+.PHONY: run-bsv-nodes-with-broadcaster
+run-bsv-nodes-with-broadcaster:
+	docker compose -f ./docker-compose.bsv.yaml down -v --remove-orphans
+	docker compose -f ./docker-compose.bsv.yaml up --build broadcaster1 broadcaster2
+	docker compose -f ./docker-compose.bsv.yaml down
 
 .PHONY: stop
 stop:
