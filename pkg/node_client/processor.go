@@ -265,12 +265,6 @@ func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHas
 	return txResult.hash, txResult.outputs[0].satoshis, nil
 }
 
-type selfPayingResult struct {
-	hash      *chainhash.Hash
-	satoshis  int64
-	hexString string
-}
-
 func (p *Processor) GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error) {
 	blockMsg, err := p.client.GetBlock(blockHash.String())
 	if err != nil {
