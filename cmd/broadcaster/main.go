@@ -104,13 +104,15 @@ func run() error {
 
 	var startBroadcastingAt time.Time
 	if *startAt == "" {
-		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(90 * time.Second)
+		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(60 * time.Second)
 	} else {
 		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
 		if err != nil {
 			return err
 		}
 	}
+
+	startBroadcastingAt = startBroadcastingAt.In(time.UTC)
 
 	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.RFC3339}))
 
@@ -195,9 +197,10 @@ func run() error {
 		return err
 	}
 
-	logger.Info("Waiting to prepare utxos", "until", startBroadcastingAt.Add(-1**wait).String())
-
-	time.Sleep(time.Until(startBroadcastingAt.Add(-1 * *wait)))
+	prepareUtxosAt := startBroadcastingAt.Add(-1 * *wait)
+	startTimer := time.NewTimer(time.Until(prepareUtxosAt))
+	logger.Info("Waiting to prepare utxos", "until", prepareUtxosAt.String(), "now", time.Now().In(time.UTC).String())
+	<-startTimer.C
 
 	logger.Info("Preparing utxos")
 	err = newBroadcaster.PrepareUtxos(10000)
@@ -210,11 +213,7 @@ func run() error {
 
 	newListener := listener.New(proc)
 
-	logger.Info("Starting listening")
-
 	newListener.Start(ctx, messageChan, newBlockCh, broadcasterLogger, startBroadcastingAt)
-
-	logger.Info("Starting mining")
 	newMiner.Start(ctx, *generateBlocks, newBlockCh, broadcasterLogger, startBroadcastingAt)
 
 	doneChan := make(chan error)
