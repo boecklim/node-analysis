@@ -164,7 +164,7 @@ func run() error {
 		broadcasterLogger = slog.New(
 			slogmulti.Fanout(
 				slog.NewJSONHandler(logFile, &slog.HandlerOptions{Level: slog.LevelInfo}),
-				tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}),
+				tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.RFC3339}),
 			),
 		)
 	} else {
@@ -222,7 +222,7 @@ func run() error {
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		err = newBroadcaster.Start(*txsRate, *limit, broadcasterLogger)
+		err = newBroadcaster.Start(*txsRate, *limit, broadcasterLogger, startBroadcastingAt)
 		doneChan <- err
 	}()
 

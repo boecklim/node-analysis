@@ -56,18 +56,21 @@ func (b *Broadcaster) PrepareUtxos(targetUtxos int) (err error) {
 	return nil
 }
 
-func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger *slog.Logger) (err error) {
+func (b *Broadcaster) Start(rateTxsPerSecond int64, limit time.Duration, logger *slog.Logger, startAt time.Time) (err error) {
 	b.limit = limit
 	deadline := time.Now().Add(limit)
 
 	logger = logger.With(slog.String("service", "broadcaster"))
+
+	startTimer := time.NewTimer(time.Until(startAt))
+	logger.Info("Waiting to start", "until", startAt.String())
+	<-startTimer.C
 
 	logger.Info("Starting broadcasting", "outputs", len(b.utxoChannel))
 
 	submitInterval := time.Duration(millisecondsPerSecond/float64(rateTxsPerSecond)) * time.Millisecond
 	submitTicker := time.NewTicker(submitInterval)
 
-	//errCh := make(chan error, 100)
 	var satoshis int64
 	var hash *chainhash.Hash
 	statTicker := time.NewTicker(5 * time.Second)
