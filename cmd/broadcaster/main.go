@@ -81,7 +81,7 @@ func run() error {
 		return errors.New("limit not given")
 	}
 
-	wait := flag.Duration("wait", 0*time.Second, "time to wait before utxo preparation")
+	wait := flag.Duration("wait", 0*time.Second, "time duration before start time at which to do utxo preparation")
 	if wait == nil {
 		return errors.New("wait not given")
 	}
@@ -198,7 +198,7 @@ func run() error {
 	}
 
 	prepareUtxosAt := startBroadcastingAt.Add(-1 * *wait)
-	startTimer := time.NewTimer(time.Until(prepareUtxosAt))
+	startTimer := time.NewTimer(time.Now().UTC().Sub(prepareUtxosAt))
 	logger.Info("Waiting to prepare utxos", "until", prepareUtxosAt.String(), "now", time.Now().In(time.UTC).String())
 	<-startTimer.C
 
