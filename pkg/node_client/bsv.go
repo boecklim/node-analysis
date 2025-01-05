@@ -10,10 +10,10 @@ import (
 	"github.com/libsv/go-bt/v2"
 	"github.com/libsv/go-bt/v2/unlocker"
 
-	"github.com/boecklim/node-analysis/pkg/processor"
+	"github.com/boecklim/node-analysis/pkg/broadcaster"
 )
 
-func (p *Processor) splitToAddressBSV(txOut *processor.TxOut, outputs int) (res *splitResult, err error) {
+func (p *Processor) splitToAddressBSV(txOut *broadcaster.TxOut, outputs int) (res *splitResult, err error) {
 	tx := bt.NewTx()
 
 	err = tx.From(txOut.Hash.String(), txOut.VOut, txOut.ScriptPubKeyHex, uint64(txOut.ValueSat))

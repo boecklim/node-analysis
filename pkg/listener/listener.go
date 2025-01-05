@@ -1,4 +1,4 @@
-package processor
+package listener
 
 import (
 	"context"
@@ -11,14 +11,17 @@ import (
 
 const (
 	pubhashblock = "hashblock"
-	pubhashtx    = "hashtx"
 )
+
+type Processor interface {
+	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
+}
 
 type Listener struct {
 	rpcClient Processor
 }
 
-func NewListener(rpcClient Processor) *Listener {
+func New(rpcClient Processor) *Listener {
 	l := &Listener{
 		rpcClient: rpcClient,
 	}

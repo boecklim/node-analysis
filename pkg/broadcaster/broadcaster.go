@@ -1,4 +1,4 @@
-package processor
+package broadcaster
 
 import (
 	"context"
@@ -11,14 +11,11 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/wire"
 )
 
 type Processor interface {
 	PrepareUtxos(utxoChannel chan TxOut, targetUtxos int) (err error)
 	SubmitSelfPayingSingleOutputTx(txOut TxOut) (txHash *chainhash.Hash, satoshis int64, err error)
-	GenerateBlock() (blockHash string, err error)
-	GetBlockSize(blockHash *chainhash.Hash) (sizeBytes uint64, nrTxs uint64, err error)
 	GetMempoolSize() (nrTxs uint64, err error)
 }
 
@@ -31,7 +28,6 @@ type Broadcaster struct {
 	wg        sync.WaitGroup
 	totalTxs  int64
 	limit     time.Duration
-	txChannel chan *wire.MsgTx
 }
 
 const (
@@ -42,7 +38,6 @@ func NewBroadcaster(client Processor) (*Broadcaster, error) {
 	b := &Broadcaster{
 		processor:   client,
 		utxoChannel: make(chan TxOut, 10100),
-		txChannel:   make(chan *wire.MsgTx, 10100),
 	}
 
 	ctx, cancelAll := context.WithCancel(context.Background())

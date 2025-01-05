@@ -1,4 +1,4 @@
-package processor
+package miner
 
 import (
 	"context"
@@ -8,13 +8,17 @@ import (
 	"time"
 )
 
+type Processor interface {
+	GenerateBlock() (blockHash string, err error)
+}
+
 type Client struct {
 	client   Processor
 	shutdown chan struct{}
 }
 
-// NewMiner creates a new simulated miner
-func NewMiner(client Processor) *Client {
+// New creates a new simulated miner
+func New(client Processor) *Client {
 	c := &Client{
 		client:   client,
 		shutdown: make(chan struct{}, 1),

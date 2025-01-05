@@ -15,8 +15,10 @@ import (
 	"github.com/lmittmann/tint"
 	slogmulti "github.com/samber/slog-multi"
 
+	"github.com/boecklim/node-analysis/pkg/broadcaster"
+	"github.com/boecklim/node-analysis/pkg/listener"
+	"github.com/boecklim/node-analysis/pkg/miner"
 	"github.com/boecklim/node-analysis/pkg/node_client"
-	"github.com/boecklim/node-analysis/pkg/processor"
 	"github.com/boecklim/node-analysis/pkg/zmq"
 )
 
@@ -102,7 +104,7 @@ func run() error {
 
 	var startBroadcastingAt time.Time
 	if *startAt == "" {
-		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(30 * time.Second)
+		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(90 * time.Second)
 	} else {
 		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
 		if err != nil {
@@ -110,13 +112,13 @@ func run() error {
 		}
 	}
 
-	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.Kitchen}))
+	logger := slog.New(tint.NewHandler(os.Stdout, &tint.Options{Level: slog.LevelInfo, TimeFormat: time.RFC3339}))
 
 	btcClient, err := node_client.New(*host, *rpcPort, rpcUser, rpcPassword, slog.Default())
 	if err != nil {
 		return err
 	}
-	var proc processor.Processor
+	var proc *node_client.Processor
 
 	switch *blockchain {
 	case btcBlockchain:
@@ -188,39 +190,39 @@ func run() error {
 		return err
 	}
 
-	broadcaster, err := processor.NewBroadcaster(proc)
+	newBroadcaster, err := broadcaster.NewBroadcaster(proc)
 	if err != nil {
 		return err
 	}
 
-	logger.Info("waiting for utxo preparation to start", "wait", *wait)
+	logger.Info("Waiting to prepare utxos", "until", startBroadcastingAt.Add(-1**wait).String())
 
-	time.Sleep(*wait)
+	time.Sleep(time.Until(startBroadcastingAt.Add(-1 * *wait)))
 
 	logger.Info("Preparing utxos")
-	err = broadcaster.PrepareUtxos(10000)
+	err = newBroadcaster.PrepareUtxos(10000)
 	if err != nil {
 		return err
 	}
 	newBlockCh := make(chan string, 100)
 
-	miner := processor.NewMiner(proc)
+	newMiner := miner.New(proc)
 
-	listener := processor.NewListener(proc)
+	newListener := listener.New(proc)
 
 	logger.Info("Starting listening")
 
-	listener.Start(ctx, messageChan, newBlockCh, broadcasterLogger, startBroadcastingAt)
+	newListener.Start(ctx, messageChan, newBlockCh, broadcasterLogger, startBroadcastingAt)
 
 	logger.Info("Starting mining")
-	miner.Start(ctx, *generateBlocks, newBlockCh, broadcasterLogger, startBroadcastingAt)
+	newMiner.Start(ctx, *generateBlocks, newBlockCh, broadcasterLogger, startBroadcastingAt)
 
 	doneChan := make(chan error)
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt) // Listen for Ctrl+C
 
 	go func() {
-		err = broadcaster.Start(*txsRate, *limit, broadcasterLogger)
+		err = newBroadcaster.Start(*txsRate, *limit, broadcasterLogger)
 		doneChan <- err
 	}()
 
@@ -234,7 +236,7 @@ func run() error {
 		}
 	}
 
-	broadcaster.Shutdown()
+	newBroadcaster.Shutdown()
 	logger.Info("Broadcasting shutdown complete")
 	return nil
 }

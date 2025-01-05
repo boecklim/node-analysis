@@ -11,10 +11,10 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 
-	"github.com/boecklim/node-analysis/pkg/processor"
+	"github.com/boecklim/node-analysis/pkg/broadcaster"
 )
 
-func (p *Processor) splitToAddressBTC(txOut *processor.TxOut, outputs int) (res *splitResult, err error) {
+func (p *Processor) splitToAddressBTC(txOut *broadcaster.TxOut, outputs int) (res *splitResult, err error) {
 	tx := wire.NewMsgTx(wire.TxVersion)
 
 	prevOut := wire.NewOutPoint(txOut.Hash, txOut.VOut)

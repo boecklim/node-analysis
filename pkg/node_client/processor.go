@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boecklim/node-analysis/pkg/processor"
+	"github.com/boecklim/node-analysis/pkg/broadcaster"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -26,7 +26,7 @@ const (
 	blocksGenerated = 200
 )
 
-var _ processor.Processor = &Processor{}
+var _ broadcaster.Processor = &Processor{}
 
 type GetMiningInfoResult struct {
 	Blocks             int64   `json:"blocks"`
@@ -126,7 +126,7 @@ type Processor struct {
 	client             RPCClient
 	logger             *slog.Logger
 	isBSV              bool
-	splitToAddressFunc func(txOut *processor.TxOut, outputs int) (res *splitResult, err error)
+	splitToAddressFunc func(txOut *broadcaster.TxOut, outputs int) (res *splitResult, err error)
 	addressString      string
 	privKey            *btcec.PrivateKey
 }
@@ -174,7 +174,7 @@ func NewProcessor(client RPCClient, logger *slog.Logger, isBSV bool) (*Processor
 	return p, nil
 }
 
-func (p *Processor) getCoinbaseTxOut() (*processor.TxOut, error) {
+func (p *Processor) getCoinbaseTxOut() (*broadcaster.TxOut, error) {
 	var txOut *GetTxOutResult
 	var txHash string
 
@@ -221,7 +221,7 @@ func (p *Processor) getCoinbaseTxOut() (*processor.TxOut, error) {
 		return nil, err
 	}
 
-	return &processor.TxOut{
+	return &broadcaster.TxOut{
 		Hash:            hash,
 		ValueSat:        int64(txOut.Value * satPerBtc),
 		ScriptPubKeyHex: txOut.ScriptPubKey.Hex,
@@ -248,7 +248,7 @@ func getHexString(tx *wire.MsgTx) (string, error) {
 	return hex.EncodeToString(buf.Bytes()), nil
 }
 
-func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut processor.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
+func (p *Processor) SubmitSelfPayingSingleOutputTx(txOut broadcaster.TxOut) (txHash *chainhash.Hash, satoshis int64, err error) {
 	txResult, err := p.splitToAddressFunc(&txOut, 0)
 	if err != nil {
 		return nil, 0, err
@@ -283,7 +283,7 @@ func (p *Processor) GetMempoolSize() (nrTxs uint64, err error) {
 	return uint64(len(rawMempool)), nil
 }
 
-func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos int) (err error) {
+func (p *Processor) PrepareUtxos(utxoChannel chan broadcaster.TxOut, targetUtxos int) (err error) {
 	signalFinish := make(chan struct{})
 	loggingStopped := make(chan struct{})
 	showTicker := time.NewTicker(2 * time.Second)
@@ -306,7 +306,7 @@ func (p *Processor) PrepareUtxos(utxoChannel chan processor.TxOut, targetUtxos i
 	}
 outerLoop:
 	for len(utxoChannel) < targetUtxos {
-		var rootTxOut *processor.TxOut
+		var rootTxOut *broadcaster.TxOut
 		rootTxOut, err = p.getCoinbaseTxOut()
 		if err != nil {
 			return err
@@ -334,10 +334,10 @@ outerLoop:
 
 		p.logger.Debug("Sent root tx", "hash", *sentTxHash, "outputs", len(rootSplitResult.outputs))
 
-		var splitTxOut *processor.TxOut
+		var splitTxOut *broadcaster.TxOut
 
 		for rootIndex, rootOutput := range rootSplitResult.outputs {
-			splitTxOut = &processor.TxOut{
+			splitTxOut = &broadcaster.TxOut{
 				Hash:            rootSplitResult.hash,
 				ValueSat:        rootOutput.satoshis,
 				ScriptPubKeyHex: rootOutput.pkScript,
@@ -366,7 +366,7 @@ outerLoop:
 					return err
 				}
 
-				utxoChannel <- processor.TxOut{
+				utxoChannel <- broadcaster.TxOut{
 					Hash:            splitTxHashString,
 					ScriptPubKeyHex: output.pkScript,
 					ValueSat:        output.satoshis,
