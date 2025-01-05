@@ -1,6 +1,6 @@
 services:
   node1:
-    container_name: node1
+#    container_name: node1
     image: bitcoinsv/bitcoin-sv:1.1.0
     ports:
       - "18443:18443"
@@ -13,10 +13,25 @@ services:
     volumes:
       - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
       - node1-data:/data
-    command: [ "/entrypoint.sh", "bitcoind", "-connect=node2:18444" ]
+    command: [ "/entrypoint.sh", "bitcoind", "-connect=node2:18444", "-connect=node3:18444", "-connect=node4:18444", "-connect=node5:18444" ]
+
+  broadcaster1:
+    build: ./
+    command: [ "./broadcaster", "-host=node1", "-blockchain=bsv", "-gen-blocks=2m", "-rate=50", "-limit=15m", "-wait=10s" ]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
+        condition: service_healthy
 
   node2:
-    container_name: node2
+#    container_name: node2
     image: bitcoinsv/bitcoin-sv:1.1.0
     expose:
       - "18444"
@@ -26,28 +41,114 @@ services:
     volumes:
       - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
       - node2-data:/data
-    command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444" ]
-
-  broadcaster1:
-    build: ./
-    command: [ "./broadcaster", "-host=node1", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s", "-wait=0s" ]
-    depends_on:
-      node1:
-        condition: service_healthy
-      node2:
-        condition: service_healthy
+    command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444", "-connect=node3:18444", "-connect=node4:18444", "-connect=node5:18444" ]
 
   broadcaster2:
     build: ./
-    command: [ "./broadcaster", "-host=node2", "-blockchain=bsv", "-gen-blocks=15s", "-rate=10", "-limit=30s", "-wait=10s"]
+    command: [ "./broadcaster", "-host=node2", "-blockchain=bsv", "-gen-blocks=2m", "-rate=50", "-limit=15m", "-wait=20s"]
     depends_on:
       node1:
         condition: service_healthy
       node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
+        condition: service_healthy
+
+  node3:
+#    container_name: node2
+    image: bitcoinsv/bitcoin-sv:1.1.0
+    expose:
+      - "18444"
+      - "18443"
+    healthcheck:
+      test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
+    volumes:
+      - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
+      - node3-data:/data
+    command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444", "-connect=node2:18444", "-connect=node4:18444", "-connect=node5:18444"  ]
+
+  broadcaster3:
+    build: ./
+    command: [ "./broadcaster", "-host=node3", "-blockchain=bsv", "-gen-blocks=2m", "-rate=50", "-limit=15m", "-wait=30s"]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
+        condition: service_healthy
+
+  node4:
+#    container_name: node2
+    image: bitcoinsv/bitcoin-sv:1.1.0
+    expose:
+      - "18444"
+      - "18443"
+    healthcheck:
+      test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
+    volumes:
+      - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
+      - node4-data:/data
+    command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444", "-connect=node2:18444", "-connect=node3:18444", "-connect=node5:18444" ]
+
+  broadcaster4:
+    build: ./
+    command: [ "./broadcaster", "-host=node4", "-blockchain=bsv", "-gen-blocks=2m", "-rate=50", "-limit=15m", "-wait=40s"]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
+        condition: service_healthy
+  node5:
+#    container_name: node2
+    image: bitcoinsv/bitcoin-sv:1.1.0
+    expose:
+      - "18444"
+      - "18443"
+    healthcheck:
+      test: [ "CMD", "/entrypoint.sh", "bitcoin-cli", "getinfo" ]
+    volumes:
+      - ./config/bsv/bitcoin.conf:/data/bitcoin.conf
+      - node5-data:/data
+    command: [ "/entrypoint.sh", "bitcoind", "-connect=node1:18444", "-connect=node2:18444", "-connect=node3:18444", "-connect=node4:18444" ]
+
+  broadcaster5:
+    build: ./
+    command: [ "./broadcaster", "-host=node5", "-blockchain=bsv", "-gen-blocks=2m", "-rate=50", "-limit=15m", "-wait=50s"]
+    depends_on:
+      node1:
+        condition: service_healthy
+      node2:
+        condition: service_healthy
+      node3:
+        condition: service_healthy
+      node4:
+        condition: service_healthy
+      node5:
         condition: service_healthy
 
 volumes:
   node1-data:
     external: false
   node2-data:
+    external: false
+  node3-data:
+    external: false
+  node4-data:
+    external: false
+  node5-data:
     external: false

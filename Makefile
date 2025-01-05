@@ -18,7 +18,7 @@ run-btc-nodes-with-broadcaster:
 .PHONY: run-bsv-nodes-with-broadcaster
 run-bsv-nodes-with-broadcaster:
 	docker compose -f ./docker-compose.bsv.yaml down -v --remove-orphans
-	docker compose -f ./docker-compose.bsv.yaml up --build broadcaster1 broadcaster2
+	docker compose -f ./docker-compose.bsv.yaml up --build broadcaster1 broadcaster2 broadcaster3 broadcaster4 broadcaster5
 	docker compose -f ./docker-compose.bsv.yaml down
 
 .PHONY: stop
