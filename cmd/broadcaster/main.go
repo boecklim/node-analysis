@@ -102,14 +102,19 @@ func run() error {
 		generateBlocks = nil
 	}
 
+	now := time.Now()
 	var startBroadcastingAt time.Time
 	if *startAt == "" {
-		startBroadcastingAt = time.Now().Round(5 * time.Second).Add(60 * time.Second)
+		startBroadcastingAt = now.Round(5 * time.Second).Add(60 * time.Second)
 	} else {
 		startBroadcastingAt, err = time.Parse(time.RFC3339, *startAt)
 		if err != nil {
 			return err
 		}
+	}
+
+	if startBroadcastingAt.Before(now) {
+		return errors.New("start time is earlier than now")
 	}
 
 	startBroadcastingAt = startBroadcastingAt.In(time.UTC)
@@ -200,7 +205,7 @@ func run() error {
 	prepareUtxosAt := startBroadcastingAt.Add(-1 * *wait)
 	timer := prepareUtxosAt.Sub(time.Now().UTC())
 
-	logger.Info("time", "prepare utxos at", prepareUtxosAt.String(), "timer", timer.String())
+	logger.Info("Time", "prepare utxos at", prepareUtxosAt.String(), "timer", timer.String()) // Todo: Remove
 
 	startTimer := time.NewTimer(timer)
 	logger.Info("Waiting to prepare utxos", "until", prepareUtxosAt.String(), "now", time.Now().In(time.UTC).String())
