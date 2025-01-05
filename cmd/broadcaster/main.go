@@ -198,7 +198,7 @@ func run() error {
 	}
 
 	prepareUtxosAt := startBroadcastingAt.Add(-1 * *wait)
-	startTimer := time.NewTimer(time.Now().UTC().Sub(prepareUtxosAt))
+	startTimer := time.NewTimer(prepareUtxosAt.Sub(time.Now().UTC()))
 	logger.Info("Waiting to prepare utxos", "until", prepareUtxosAt.String(), "now", time.Now().In(time.UTC).String())
 	<-startTimer.C
 
