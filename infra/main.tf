@@ -146,11 +146,12 @@ resource "azurerm_linux_virtual_machine" "my_terraform_vm" {
     sku       = "server-gen1"
     version   = "latest"
   }
-  
-  custom_data = var.use_btc ? data.template_cloudinit_config.config_btc.rendered : data.template_cloudinit_config.config_bsv.rendered
+
+  custom_data = var.use_btc ? element(data.template_cloudinit_config.config_btc.*.rendered, count.index) : element(data.template_cloudinit_config.config_bsv.*.rendered, count.index)
 }
 
 data "template_cloudinit_config" "config_btc" {
+  count         = var.virtual_machines
   gzip          = true
   base64_encode = true
 
@@ -208,12 +209,13 @@ runcmd:
   - wget -P /home/azureuser https://github.com/boecklim/node-analysis/releases/download/${var.broadcaster_version}/broadcaster
   - chmod +x /home/azureuser/broadcaster
   - sleep 120
-  - /home/azureuser/broadcaster -rpc-port=18443 -zmq-port=29000 -blockchain=btc -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/output.log
+  - /home/azureuser/broadcaster -blockchain=btc -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -wait="${(count.index + 1) * 10}s" -start-at=${var.start_time} -output=/home/azureuser/output.log
 EOF
   }
 }
 
 data "template_cloudinit_config" "config_bsv" {
+  count         = var.virtual_machines
   gzip          = true
   base64_encode = true
 
@@ -237,7 +239,7 @@ write_files:
         upnp=0
         usecashaddr=0
         debug=1
-        rpcport=18332
+        rpcport=18443
         rpcuser=bitcoin
         rpcpassword=bitcoin
         rpcallowip=0.0.0.0/0
@@ -258,9 +260,7 @@ write_files:
         maxmempool=2000
         blockreconstructionextratxn=100000
         banscore=10000
-        zmqpubhashblock=tcp://*:28332
-        zmqpubhashtx=tcp://*:28332
-        invalidtxsink=ZMQ
+        zmqpubhashblock=tcp://*:29000
         genesisactivationheight=1
         minminingtxfee=0.0000005
 
@@ -296,7 +296,7 @@ runcmd:
   - wget -P /home/azureuser https://github.com/boecklim/node-analysis/releases/download/${var.broadcaster_version}/broadcaster
   - chmod +x /home/azureuser/broadcaster
   - sleep 120
-  - /home/azureuser/broadcaster -rpc-port=18332 -zmq-port=28332 -blockchain=bsv -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -start-at=${var.start_time} -output=/home/azureuser/output.log
+  - /home/azureuser/broadcaster -blockchain=bsv -gen-blocks=${var.gen_block_time} -rate=${var.rate} -limit=${var.limit} -wait="${(count.index + 1) * 10}s" -start-at=${var.start_time} -output=/home/azureuser/output.log
 EOF
   }
 }
